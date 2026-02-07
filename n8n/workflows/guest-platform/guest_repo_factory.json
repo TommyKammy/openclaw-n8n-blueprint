@@ -6,7 +6,7 @@
       "name": "Factory Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300],
+      "position": [220, 300],
       "parameters": {
         "httpMethod": "POST",
         "path": "guest-platform/repo-factory",
@@ -18,30 +18,47 @@
       "name": "Prepare Repo Inputs",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
-      "position": [520, 300],
+      "position": [480, 300],
       "parameters": {
-        "functionCode": "const body = $json.body ?? $json;\nconst owner = $env.GITHUB_OWNER || 'TommyKammy';\nconst guest = (body.guest || '').trim().toLowerCase();\nconst appSlug = (body.app_slug || '').trim().toLowerCase();\nif (!guest || !appSlug) throw new Error('Missing guest or app_slug');\nconst repoName = `${guest}-${appSlug}`;\nreturn [{ json: { owner, guest_slug: guest, app_slug: appSlug, repo_name: repoName, full_repo: `${owner}/${repoName}`, description: body.description || 'Guest app repository' } }];"
+        "functionCode": "const body = $json.body ?? $json;\nconst owner = $env.GITHUB_OWNER || 'TommyKammy';\nconst guest = (body.guest || '').trim().toLowerCase();\nconst appSlug = (body.app_slug || '').trim().toLowerCase();\nif (!guest || !appSlug) throw new Error('Missing guest or app_slug');\nconst repoName = `${guest}-${appSlug}`;\nconst fullRepo = `${owner}/${repoName}`;\nconst cmd = `./scripts/guest-platform/register_guest_app.sh ${guest} ${appSlug} \"${(body.description || 'Guest app repository').replace(/\"/g, '')}\"`;\nreturn [{ json: { guest, app_slug: appSlug, owner, repo_name: repoName, full_repo: fullRepo, description: body.description || 'Guest app repository', operator_command: cmd, channel: $env.SLACK_OPERATOR_ALERT_CHANNEL || '' } }];"
       }
     },
     {
-      "id": "Exec_Register",
-      "name": "Run Register Script",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [800, 300],
+      "id": "HTTP_Notify_Operator",
+      "name": "Notify Operator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, 300],
       "parameters": {
-        "command": "=./scripts/guest-platform/register_guest_app.sh {{$json.guest_slug}} {{$json.app_slug}} \"{{$json.description}}\""
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SLACK_BOT_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { channel: $json.channel, text: 'Guest repo factory request: ' + $json.full_repo + '\\nRun on host: ' + $json.operator_command } }}"
       }
     },
     {
       "id": "Respond_Factory",
-      "name": "Respond Repo Created",
+      "name": "Respond Queued",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1080, 300],
+      "position": [1020, 300],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"ok\": true,\n  \"repo\": $node[\"Prepare Repo Inputs\"].json.full_repo,\n  \"url\": \"https://github.com/\" + $node[\"Prepare Repo Inputs\"].json.full_repo\n}"
+        "responseBody": "={{ { ok: true, mode: 'operator-assisted', repo: $node['Prepare Repo Inputs'].json.full_repo, command: $node['Prepare Repo Inputs'].json.operator_command } }}"
       }
     }
   ],
@@ -61,18 +78,18 @@
       "main": [
         [
           {
-            "node": "Run Register Script",
+            "node": "Notify Operator",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Run Register Script": {
+    "Notify Operator": {
       "main": [
         [
           {
-            "node": "Respond Repo Created",
+            "node": "Respond Queued",
             "type": "main",
             "index": 0
           }
