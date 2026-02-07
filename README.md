@@ -18,6 +18,21 @@ This repository is designed for fast reproducibility on a new host.
 - `slack_n8n_provisioner.py` handles Slack and Teams provisioning events
 - `openclaw_n8n_sync_worker.py` syncs eligible OpenClaw scheduled jobs into n8n workflows
 
+## Key Features
+
+- Slack and Teams guest provisioning into n8n using a single provisioner service
+- OpenClaw -> n8n workflow sync with requester allowlists and ownership assignment
+- Per-user memory/session isolation for chat operations
+- Health and metrics endpoints for both provisioning and sync services
+- Hardened production compose profile with security and resource controls
+
+## Chat History Isolation
+
+- Slack and Teams chat histories are separated per user by design.
+- OpenClaw session scope is configured to isolate direct-message context per sender (`per-sender` + `per-channel-peer`).
+- Synced OpenClaw workflows also inject a memory isolation policy and user-scoped session key, so persistent memory paths remain user-specific.
+- This prevents one guest from seeing or reusing another guest's conversational memory by default.
+
 ## Main Endpoints
 
 - `/` -> n8n UI/API
