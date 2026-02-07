@@ -9,10 +9,11 @@ fi
 FULL_REPO="$1"
 
 echo "Applying branch protection to ${FULL_REPO}:main"
-gh api --method PUT \
+set +e
+OUTPUT=$(gh api --method PUT \
   -H "Accept: application/vnd.github+json" \
   "/repos/${FULL_REPO}/branches/main/protection" \
-  --input - <<'JSON'
+  --input - <<'JSON' 2>&1
 {
   "required_status_checks": {
     "strict": true,
@@ -37,5 +38,18 @@ gh api --method PUT \
   "allow_fork_syncing": true
 }
 JSON
+) 
+STATUS=$?
+set -e
+
+if [[ ${STATUS} -ne 0 ]]; then
+  if [[ "${OUTPUT}" == *"Upgrade to GitHub Pro"* ]]; then
+    echo "Branch protection skipped: GitHub plan does not allow private repo branch protection."
+    exit 0
+  fi
+  echo "Failed to configure branch protection:" >&2
+  echo "${OUTPUT}" >&2
+  exit ${STATUS}
+fi
 
 echo "Branch protection configured."
