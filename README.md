@@ -54,6 +54,9 @@ This repository is designed for fast reproducibility on a new host.
 - `docker/sync/` - sync worker image and code
 - `slack_n8n_provisioner.py` - Slack/Teams to n8n provisioning service
 - `scripts/teams/` - Graph subscription create/renew helpers
+- `scripts/guest-platform/` - guest repository bootstrap/protection scripts
+- `n8n/workflows/guest-platform/` - importable guest platform workflows
+- `docs/guest-platform/` - operations, security model, and incident runbook
 - `SETUP-GUIDE.md` - detailed setup/ops notes
 
 ## Quick Start

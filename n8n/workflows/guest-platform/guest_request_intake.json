@@ -1,0 +1,67 @@
+{
+  "name": "guest_request_intake",
+  "nodes": [
+    {
+      "id": "Webhook_Request_Intake",
+      "name": "Request Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "guest-platform/request-intake",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "Function_Normalize",
+      "name": "Normalize And Validate",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [520, 300],
+      "parameters": {
+        "functionCode": "const body = $json.body ?? $json;\nconst guest = (body.guest || '').toString().trim().toLowerCase();\nconst appName = (body.app_name || body.appName || '').toString().trim().toLowerCase();\nif (!guest || !appName) {\n  throw new Error('Missing guest or app_name');\n}\nconst appSlug = appName.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');\nconst idempotencyKey = `${guest}:${appSlug}`;\nreturn [{ json: { ...body, guest, app_name: appName, app_slug: appSlug, idempotency_key: idempotencyKey, accepted_at: new Date().toISOString() } }];"
+      }
+    },
+    {
+      "id": "Respond",
+      "name": "Respond Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [800, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"idempotency_key\": $json.idempotency_key,\n  \"guest\": $json.guest,\n  \"app_slug\": $json.app_slug\n}"
+      }
+    }
+  ],
+  "connections": {
+    "Request Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize And Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize And Validate": {
+      "main": [
+        [
+          {
+            "node": "Respond Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

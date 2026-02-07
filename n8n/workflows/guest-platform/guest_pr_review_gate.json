@@ -1,0 +1,140 @@
+{
+  "name": "guest_pr_review_gate",
+  "nodes": [
+    {
+      "id": "Webhook_PR",
+      "name": "GitHub PR Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 280],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "guest-platform/pr-review-gate",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "Function_PR_Filter",
+      "name": "Filter Pull Request Events",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [520, 280],
+      "parameters": {
+        "functionCode": "const payload = $json.body ?? $json;\nif (!payload.pull_request) {\n  return [{json: {skip: true, reason: 'not_pull_request'}}];\n}\nconst action = payload.action;\nif (!['opened','reopened','synchronize','ready_for_review'].includes(action)) {\n  return [{json: {skip: true, reason: `ignored_action:${action}`}}];\n}\nconst pr = payload.pull_request;\nreturn [{json: {\n  skip: false,\n  action,\n  repo: payload.repository.full_name,\n  number: pr.number,\n  title: pr.title,\n  url: pr.html_url,\n  author: pr.user?.login || 'unknown',\n  channel: $env.SLACK_GUEST_APPROVAL_CHANNEL || ''\n}}];"
+      }
+    },
+    {
+      "id": "IF_Skip",
+      "name": "Skip?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [760, 280],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.skip}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "HTTP_Slack",
+      "name": "Send Slack Approval Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SLACK_BOT_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"channel\": $json.channel,\n  \"text\": \"PR review required\",\n  \"blocks\": [\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*PR review required*\\nRepo: `\" + $json.repo + \"`\\nPR #\" + $json.number + \": \" + $json.title + \"\\n\" + $json.url\n      }\n    }\n  ]\n}"
+      }
+    },
+    {
+      "id": "Respond_PR",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1220, 280],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, skip: $json.skip ?? false } }}"
+      }
+    }
+  ],
+  "connections": {
+    "GitHub PR Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter Pull Request Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Pull Request Events": {
+      "main": [
+        [
+          {
+            "node": "Skip?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip?": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Slack Approval Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Slack Approval Message": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

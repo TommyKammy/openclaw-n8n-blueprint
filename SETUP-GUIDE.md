@@ -193,3 +193,30 @@ Hardened profile includes:
 - `openclaw-sync-worker` mounts `/var/run/docker.sock`; treat as privileged.
 - Prefer separate Slack app for provisioning if isolation of duties is required.
 - Monitor provisioning + sync logs for denial/error spikes.
+
+## 12. Guest app factory extension (v2)
+
+This blueprint now includes optional guest app factory assets:
+
+- Docs:
+  - `docs/guest-platform/OPERATIONS.md`
+  - `docs/guest-platform/SECURITY_MODEL.md`
+  - `docs/guest-platform/RUNBOOK.md`
+- Scripts:
+  - `scripts/guest-platform/register_guest_app.sh`
+  - `scripts/guest-platform/create_guest_repo.sh`
+  - `scripts/guest-platform/configure_branch_protection.sh`
+  - `scripts/guest-platform/set_repo_secrets.sh`
+- n8n workflow exports:
+  - `n8n/workflows/guest-platform/*.json`
+
+### Without a Vercel account
+
+You can still run phases 0-3 fully:
+
+- request intake
+- repo factory
+- PR review gate
+- deploy callback pipeline (status-only mode)
+
+Leave `VERCEL_*` env variables empty until account setup is complete.

@@ -1,0 +1,105 @@
+{
+  "name": "guest_deploy_notify",
+  "nodes": [
+    {
+      "id": "Webhook_Deploy",
+      "name": "Deploy Callback Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "guest-deploy-callback",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "Function_Verify",
+      "name": "Verify Token And Shape",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [520, 300],
+      "parameters": {
+        "functionCode": "const headers = $json.headers || {};\nconst body = $json.body ?? $json;\nconst auth = headers.authorization || headers.Authorization || '';\nconst expected = `Bearer ${$env.N8N_DEPLOY_CALLBACK_TOKEN || ''}`;\nif (!expected || auth !== expected) {\n  throw new Error('Unauthorized callback');\n}\nconst status = body.status || 'unknown';\nconst repo = body.repo || 'unknown';\nconst sha = body.sha || 'unknown';\nconst url = body.url || '';\nreturn [{ json: { status, repo, sha, url, channel: $env.SLACK_GUEST_APPROVAL_CHANNEL || '' } }];"
+      }
+    },
+    {
+      "id": "HTTP_Slack_Notify",
+      "name": "Send Slack Deploy Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SLACK_BOT_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { channel: $json.channel, text: 'Deployment status: ' + $json.status + '\\nRepo: ' + $json.repo + '\\nSHA: ' + $json.sha + ($json.url ? '\\nURL: ' + $json.url : '') } }}"
+      }
+    },
+    {
+      "id": "Respond_Deploy",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1080, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: $json.status } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Deploy Callback Webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify Token And Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Token And Shape": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Deploy Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Slack Deploy Status": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

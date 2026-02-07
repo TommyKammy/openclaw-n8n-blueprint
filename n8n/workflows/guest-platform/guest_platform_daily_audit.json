@@ -1,0 +1,88 @@
+{
+  "name": "guest_platform_daily_audit",
+  "nodes": [
+    {
+      "id": "Cron_Daily",
+      "name": "Daily Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Function_Assemble",
+      "name": "Assemble Checks",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "parameters": {
+        "functionCode": "const owner = $env.GITHUB_OWNER || 'TommyKammy';\nconst msg = [];\nmsg.push('*Guest Platform Daily Audit*');\nmsg.push(`Owner: ${owner}`);\nmsg.push(`Timestamp: ${new Date().toISOString()}`);\nif (!$env.VERCEL_TOKEN) msg.push(':warning: VERCEL_TOKEN not set (expected while account pending).');\nif (!$env.NEON_API_KEY) msg.push(':warning: NEON_API_KEY not set.');\nif (!$env.GITHUB_TOKEN) msg.push(':x: GITHUB_TOKEN not set.');\nmsg.push('Manual checks: workflow failures, stale PRs, quota status.');\nreturn [{ json: { text: msg.join('\\n'), channel: $env.SLACK_OPERATOR_ALERT_CHANNEL || '' } }];"
+      }
+    },
+    {
+      "id": "HTTP_Slack_Alert",
+      "name": "Send Daily Audit Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SLACK_BOT_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { channel: $json.channel, text: $json.text } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Daily Trigger": {
+      "main": [
+        [
+          {
+            "node": "Assemble Checks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Checks": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Audit Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}
