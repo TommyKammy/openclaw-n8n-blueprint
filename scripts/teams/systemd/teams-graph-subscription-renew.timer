@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodic renewal for Teams Graph subscription
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=12h
+RandomizedDelaySec=5min
+Unit=teams-graph-subscription-renew.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

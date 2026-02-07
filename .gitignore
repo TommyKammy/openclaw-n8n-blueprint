@@ -1,0 +1,12 @@
+.env
+.env.local
+certs/
+acme/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+scripts/teams/subscription-id.txt
+state/
+*.log

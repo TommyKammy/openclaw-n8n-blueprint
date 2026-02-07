@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew Microsoft Graph webhook subscription for Teams provisioning
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/teams-graph-subscription-renew
+WorkingDirectory=/opt/openclaw-n8n-blueprint
+ExecStart=/opt/openclaw-n8n-blueprint/scripts/teams/renew-subscription.sh

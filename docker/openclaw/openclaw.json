@@ -1,0 +1,41 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/home/openclaw/.openclaw/workspace"
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    }
+  },
+  "hooks": {
+    "enabled": true,
+    "path": "/hooks",
+    "token": "REPLACE_HOOK_TOKEN"
+  },
+  "channels": {
+    "slack": {
+      "enabled": true,
+      "mode": "socket",
+      "botToken": "xoxb-REPLACE_ME",
+      "appToken": "xapp-REPLACE_ME",
+      "dm": {
+        "enabled": true,
+        "policy": "open",
+        "allowFrom": [
+          "*"
+        ]
+      }
+    }
+  },
+  "session": {
+    "scope": "per-sender",
+    "dmScope": "per-channel-peer",
+    "mainKey": "main"
+  }
+}
