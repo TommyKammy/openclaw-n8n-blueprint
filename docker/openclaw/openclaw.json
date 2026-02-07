@@ -24,6 +24,12 @@
       "mode": "socket",
       "botToken": "xoxb-REPLACE_ME",
       "appToken": "xapp-REPLACE_ME",
+      "channels": {
+        "*": {
+          "allow": true,
+          "requireMention": false
+        }
+      },
       "dm": {
         "enabled": true,
         "policy": "open",
