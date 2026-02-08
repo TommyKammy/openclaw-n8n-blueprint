@@ -166,6 +166,8 @@ Expected automated outcomes per request:
 
 - Slack channel `#app-dev-<guest-slug>` created (or reused).
 - `@Claw` and guest user invited to channel.
+- Channel topic/purpose set to enforce repository naming convention.
+- Prompt-template message posted by `@Claw` and pinned for onboarding guidance.
 - Private GitHub repo created from `guest-app-template` under configured owner.
 - Secrets/webhook configured via existing bootstrap scripts.
 - Vercel project created/reused and repository secret `VERCEL_PROJECT_ID` updated.

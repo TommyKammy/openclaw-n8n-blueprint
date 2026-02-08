@@ -48,6 +48,8 @@ Use the full automation script to create Slack channel, invite users, create pri
   --app-slug "bob-app"
 ```
 
+The script also sets Slack channel topic/purpose and posts a pinned prompt-template message for guest onboarding.
+
 Or run as API service and call via webhook payload:
 
 ```bash

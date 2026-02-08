@@ -32,10 +32,10 @@ def slack_api(method: str, payload: dict, token: str) -> dict:
     return http_post_json(url, payload, {"Authorization": f"Bearer {token}"})
 
 
-def ensure_channel(channel_name: str, bot_token: str) -> str:
+def ensure_channel(channel_name: str, bot_token: str) -> tuple[str, bool]:
     res = slack_api("conversations.create", {"name": channel_name, "is_private": False}, bot_token)
     if res.get("ok"):
-        return res["channel"]["id"]
+        return res["channel"]["id"], True
     if res.get("error") == "name_taken":
         list_res = slack_api(
             "conversations.list",
@@ -45,7 +45,7 @@ def ensure_channel(channel_name: str, bot_token: str) -> str:
         if list_res.get("ok"):
             for ch in list_res.get("channels", []):
                 if ch.get("name") == channel_name:
-                    return ch["id"]
+                    return ch["id"], False
     raise RuntimeError(f"failed to create/find channel {channel_name}: {res}")
 
 
@@ -75,6 +75,53 @@ def invite_to_channel(channel_id: str, user_ids: list[str], bot_token: str) -> N
         "invalid_users",
     }:
         raise RuntimeError(f"failed to invite users to channel: {res}")
+
+
+def set_channel_context(channel_id: str, guest_slug: str, bot_token: str) -> None:
+    topic = f"Guest app development for {guest_slug}. Repo naming: {guest_slug}-<app-slug>."
+    purpose = (
+        f"Build and iterate apps for guest {guest_slug}. "
+        "Use the prompt templates from @Claw and keep app_slug lowercase-hyphen format."
+    )
+    topic_res = slack_api("conversations.setTopic", {"channel": channel_id, "topic": topic}, bot_token)
+    if not topic_res.get("ok"):
+        raise RuntimeError(f"failed to set channel topic: {topic_res}")
+    purpose_res = slack_api("conversations.setPurpose", {"channel": channel_id, "purpose": purpose}, bot_token)
+    if not purpose_res.get("ok"):
+        raise RuntimeError(f"failed to set channel purpose: {purpose_res}")
+
+
+def build_prompt_template_message(guest_slug: str) -> str:
+    return "\n".join(
+        [
+            "*Welcome to your app-dev channel*",
+            f"Repository naming convention: `{guest_slug}-<app-slug>`",
+            "Use lowercase letters, numbers, and hyphens only for `app_slug`.",
+            "",
+            "*Prompt examples*",
+            "1) Create app",
+            f"`Create app app_slug=booking for {guest_slug}. Use repo name {guest_slug}-booking. Include auth, responsive UI, and deployment-ready setup.`",
+            "2) Add feature",
+            f"`In repo {guest_slug}-booking, add calendar sync. Include tests and update README.`",
+            "3) Fix bug",
+            f"`In repo {guest_slug}-booking, fix timezone issue in booking confirmation and add regression test.`",
+            "4) Deploy check",
+            f"`Check latest deploy status for {guest_slug}-booking and summarize failures with next steps.`",
+        ]
+    )
+
+
+def post_and_pin_prompt_templates(channel_id: str, guest_slug: str, bot_token: str) -> str:
+    msg = build_prompt_template_message(guest_slug)
+    post_res = slack_api("chat.postMessage", {"channel": channel_id, "text": msg}, bot_token)
+    if not post_res.get("ok"):
+        raise RuntimeError(f"failed to post template message: {post_res}")
+    ts = post_res.get("ts", "")
+    if ts:
+        pin_res = slack_api("pins.add", {"channel": channel_id, "timestamp": ts}, bot_token)
+        if not pin_res.get("ok") and pin_res.get("error") != "already_pinned":
+            raise RuntimeError(f"failed to pin template message: {pin_res}")
+    return ts
 
 
 def set_repo_secret(repo: str, key: str, value: str) -> None:
@@ -143,6 +190,7 @@ def main() -> None:
     vercel_org_id = env.get("VERCEL_ORG_ID", "")
     vercel_author_name = env.get("VERCEL_GIT_COMMIT_AUTHOR_NAME", "Tomoaki Kawada")
     vercel_author_email = env.get("VERCEL_GIT_COMMIT_AUTHOR_EMAIL", "tomoaki.w.kawada@gmail.com")
+    post_templates_mode = env.get("POST_PROMPT_TEMPLATES_MODE", "on_create").strip().lower()
 
     if not bot_token:
         raise RuntimeError("SLACK_BOT_TOKEN is required")
@@ -153,7 +201,7 @@ def main() -> None:
         raise RuntimeError("guest/app slug resolution failed")
 
     channel_name = f"app-dev-{guest_slug}"
-    channel_id = ensure_channel(channel_name, bot_token)
+    channel_id, channel_created = ensure_channel(channel_name, bot_token)
 
     guest_user_id = args.guest_slack_user_id
     if not guest_user_id and args.guest_email:
@@ -163,7 +211,14 @@ def main() -> None:
         invite_user_to_workspace(args.guest_email, admin_token)
         guest_user_id = lookup_user_id_by_email(args.guest_email, bot_token)
 
-    invite_to_channel(channel_id, [claw_bot_user_id, guest_user_id], bot_token)
+    invite_candidates = [claw_bot_user_id, guest_user_id]
+    invite_to_channel(channel_id, [u for u in invite_candidates if isinstance(u, str)], bot_token)
+    set_channel_context(channel_id, guest_slug, bot_token)
+
+    template_message_ts = ""
+    should_post_templates = post_templates_mode == "always" or (post_templates_mode == "on_create" and channel_created)
+    if should_post_templates:
+        template_message_ts = post_and_pin_prompt_templates(channel_id, guest_slug, bot_token)
 
     full_repo = run_register_script(guest_slug, app_slug, args.description, env)
 
@@ -181,8 +236,10 @@ def main() -> None:
                 "guest_slug": guest_slug,
                 "channel_name": channel_name,
                 "channel_id": channel_id,
+                "channel_created": channel_created,
                 "repo": full_repo,
                 "guest_user_id": guest_user_id,
+                "template_message_ts": template_message_ts,
             },
             ensure_ascii=True,
         )

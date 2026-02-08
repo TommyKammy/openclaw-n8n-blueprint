@@ -12,10 +12,12 @@
 
 1. Create/reuse Slack channel `app-dev-<guest-slug>`.
 2. Invite `@Claw` and guest user to channel.
-3. Create private repo from `GUEST_TEMPLATE_REPO` under `GITHUB_OWNER`.
-4. Apply repo bootstrap (`register_guest_app.sh`).
-5. Create/reuse Vercel project and set `VERCEL_PROJECT_ID` secret.
-6. Push author-linked empty commit to trigger initial deployment.
+3. Set channel topic/purpose with repository naming convention.
+4. Post and pin prompt-template examples (on channel create by default).
+5. Create private repo from `GUEST_TEMPLATE_REPO` under `GITHUB_OWNER`.
+6. Apply repo bootstrap (`register_guest_app.sh`).
+7. Create/reuse Vercel project and set `VERCEL_PROJECT_ID` secret.
+8. Push author-linked empty commit to trigger initial deployment.
 
 ## Required Environment Variables
 
@@ -38,6 +40,7 @@ Service variables:
 - `GUEST_AUTOMATION_HOST`
 - `GUEST_AUTOMATION_PORT`
 - `GUEST_AUTOMATION_TOKEN`
+- `POST_PROMPT_TEMPLATES_MODE` (`on_create` or `always`)
 
 ## Example
 
