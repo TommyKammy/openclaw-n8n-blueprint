@@ -108,6 +108,14 @@ At minimum set these in `.env`:
 - `N8N_API_KEY`, `N8N_BASE_URL`
 - `SYNC_ALLOWED_SLACK_USER_IDS`, `SYNC_ALLOWED_EMAILS`
 
+For full guest automation (channel + repo + deploy bootstrap):
+
+- `CLAW_BOT_USER_ID`
+- `SLACK_ADMIN_USER_TOKEN` (required only for workspace invites by email)
+- `GUEST_AUTOMATION_TOKEN`
+- `GITHUB_OWNER`, `GUEST_TEMPLATE_REPO`, `GITHUB_TOKEN`
+- `VERCEL_TOKEN`, `VERCEL_ORG_ID`
+
 Optional Teams provisioning vars:
 
 - `TEAMS_ENABLED=true`

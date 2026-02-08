@@ -1,0 +1,214 @@
+{
+  "name": "guest_full_onboarding",
+  "nodes": [
+    {
+      "id": "Webhook_Onboard",
+      "name": "Full Onboarding Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "4d56f291f8f14a2184da6df1",
+      "position": [220, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "guest-platform/full-onboarding",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "Function_Normalize",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [470, 300],
+      "parameters": {
+        "functionCode": "const body = $json.body ?? $json;\nconst guestName = (body.guest_name || body.guest || '').toString().trim();\nconst appSlug = (body.app_slug || body.app || 'starter-app').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');\nif (!guestName || !appSlug) throw new Error('missing guest_name or app_slug');\nreturn [{ json: { guest_name: guestName, guest_email: body.guest_email || '', guest_slack_user_id: body.guest_slack_user_id || '', app_slug: appSlug, description: body.description || `Guest app for ${guestName}` } }];"
+      }
+    },
+    {
+      "id": "Set_Config",
+      "name": "Set Automation Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [700, 300],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg1",
+              "name": "automation_url",
+              "value": "http://HOST_GATEWAY_IP:18111/guest-platform/full-onboard",
+              "type": "string"
+            },
+            {
+              "id": "cfg2",
+              "name": "automation_token",
+              "value": "REPLACE_GUEST_AUTOMATION_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "cfg3",
+              "name": "operator_channel",
+              "value": "CXXXXXXXX",
+              "type": "string"
+            },
+            {
+              "id": "cfg4",
+              "name": "slack_token",
+              "value": "xoxb-REPLACE_ME",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "HTTP_Automation",
+      "name": "Run Full Automation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.automation_url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $json.automation_token}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { guest_name: $json.guest_name, guest_email: $json.guest_email, guest_slack_user_id: $json.guest_slack_user_id, app_slug: $json.app_slug, description: $json.description } }}"
+      }
+    },
+    {
+      "id": "Function_SlackMsg",
+      "name": "Build Operator Message",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1180, 300],
+      "parameters": {
+        "functionCode": "const ok = !!$json.ok;\nconst text = ok\n  ? ['*Guest Full Onboarding Completed*', `guest: ${$json.guest_slug || 'n/a'}`, `channel: #${$json.channel_name || 'n/a'} (${ $json.channel_id || 'n/a'})`, `repo: https://github.com/${$json.repo || 'n/a'}`].join('\\n')\n  : ['*Guest Full Onboarding Failed*', `error: ${$json.error || 'unknown'}`, `detail: ${$json.detail || 'n/a'}`].join('\\n');\nreturn [{ json: { ...$json, text } }];"
+      }
+    },
+    {
+      "id": "HTTP_Notify",
+      "name": "Notify Operator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1420, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $json.slack_token}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { channel: $json.operator_channel, text: $json.text } }}"
+      }
+    },
+    {
+      "id": "Respond_Done",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: $json.ok ?? false, repo: $json.repo ?? null, channel_id: $json.channel_id ?? null, guest_user_id: $json.guest_user_id ?? null } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Full Onboarding Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Set Automation Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Automation Config": {
+      "main": [
+        [
+          {
+            "node": "Run Full Automation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Full Automation": {
+      "main": [
+        [
+          {
+            "node": "Build Operator Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Operator Message": {
+      "main": [
+        [
+          {
+            "node": "Notify Operator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Operator": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

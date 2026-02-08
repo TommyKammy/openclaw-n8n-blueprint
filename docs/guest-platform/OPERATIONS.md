@@ -37,6 +37,27 @@ This runbook operates the guest app factory on top of the existing OpenClaw + n8
 4. Confirm required secrets exist in repo.
 5. Confirm PR webhook exists (if `N8N_PR_WEBHOOK_URL` and `GITHUB_WEBHOOK_SECRET` are set).
 
+## Fully Automated Guest Onboarding
+
+Use the full automation script to create Slack channel, invite users, create private GitHub repo from template, configure secrets/webhook, and bootstrap Vercel project:
+
+```bash
+./scripts/guest-platform/full_guest_automation.py \
+  --guest-name "Bob" \
+  --guest-email "bob@example.com" \
+  --app-slug "bob-app"
+```
+
+Or run as API service and call via webhook payload:
+
+```bash
+python3 ./scripts/guest-platform/full_guest_automation_service.py
+```
+
+Endpoint:
+
+- `POST /guest-platform/full-onboard`
+
 ## Vercel + Neon Onboarding
 
 If Neon was created from Vercel console, prepare and set at least:
@@ -61,6 +82,7 @@ Import JSON files under `n8n/workflows/guest-platform/`:
 - `guest_pr_review_gate.json`
 - `guest_deploy_notify.json`
 - `guest_platform_daily_audit.json`
+- `guest_full_onboarding.json`
 
 After import:
 

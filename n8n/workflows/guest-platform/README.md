@@ -9,6 +9,7 @@ These workflows are import-ready templates aligned with `App_Development_Platfor
 - `guest_pr_review_gate.json`
 - `guest_deploy_notify.json`
 - `guest_platform_daily_audit.json`
+- `guest_full_onboarding.json`
 
 ## Import Steps
 
@@ -34,3 +35,11 @@ For PR webhook ingestion:
 
 - `N8N_PR_WEBHOOK_URL`
 - `GITHUB_WEBHOOK_SECRET`
+
+For full onboarding webhook automation:
+
+- Set `guest_full_onboarding` node values:
+  - `automation_url` (reachable URL for `full_guest_automation_service.py`)
+  - `automation_token`
+  - `operator_channel`
+  - `slack_token`

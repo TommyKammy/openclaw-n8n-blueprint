@@ -1,0 +1,16 @@
+[Unit]
+Description=Guest Platform Full Automation API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tommy
+WorkingDirectory=/home/tommy/Dev/openclaw-n8n-blueprint
+EnvironmentFile=/home/tommy/Dev/openclaw-n8n-blueprint/.env
+ExecStart=/usr/bin/python3 /home/tommy/Dev/openclaw-n8n-blueprint/scripts/guest-platform/full_guest_automation_service.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

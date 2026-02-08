@@ -152,3 +152,21 @@ Implementation notes:
 - Exported workflows are provided under `n8n/workflows/ops-automation/`.
 - Runtime values (tokens/channel IDs/API keys) should be injected during import/activation.
 - Live host validation confirms triage, safe repair, and approval gate executions succeed.
+
+## 12) Full Guest Automation Path
+
+Implemented components:
+
+- `scripts/guest-platform/full_guest_automation.py`
+- `scripts/guest-platform/full_guest_automation_service.py`
+- `scripts/guest-platform/systemd/guest-platform-automation.service`
+- `n8n/workflows/guest-platform/guest_full_onboarding.json`
+
+Expected automated outcomes per request:
+
+- Slack channel `#app-dev-<guest-slug>` created (or reused).
+- `@Claw` and guest user invited to channel.
+- Private GitHub repo created from `guest-app-template` under configured owner.
+- Secrets/webhook configured via existing bootstrap scripts.
+- Vercel project created/reused and repository secret `VERCEL_PROJECT_ID` updated.
+- Initial author-linked deployment trigger commit pushed.
