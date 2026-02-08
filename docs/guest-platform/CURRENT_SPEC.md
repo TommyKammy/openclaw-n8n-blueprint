@@ -172,3 +172,17 @@ Expected automated outcomes per request:
 - Secrets/webhook configured via existing bootstrap scripts.
 - Vercel project created/reused and repository secret `VERCEL_PROJECT_ID` updated.
 - Initial author-linked deployment trigger commit pushed.
+
+## 13) Zero-touch Trigger Path
+
+Slack event driven onboarding can be enabled in `slack-provisioner`:
+
+- Source events: Slack `team_join` and `user_change` for guest users.
+- Trigger action: provisioner calls `guest_full_onboarding` webhook.
+- Control flags:
+  - `FULL_ONBOARDING_ENABLED`
+  - `FULL_ONBOARDING_WEBHOOK_URL`
+  - `FULL_ONBOARDING_TOKEN`
+  - `FULL_ONBOARDING_DEFAULT_APP_SLUG`
+
+This allows guest invite -> automatic channel/repo/deploy bootstrap without manual script execution.

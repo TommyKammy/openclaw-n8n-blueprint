@@ -60,6 +60,21 @@ Endpoint:
 
 - `POST /guest-platform/full-onboard`
 
+## Zero-touch guest onboarding (no manual trigger)
+
+Enable Slack-event-driven onboarding by setting these env vars for `slack-provisioner`:
+
+- `FULL_ONBOARDING_ENABLED=true`
+- `FULL_ONBOARDING_WEBHOOK_URL=https://<n8n-domain>/webhook/guest-platform/full-onboarding`
+- `FULL_ONBOARDING_TOKEN=<token-matching-workflow-config>`
+- `FULL_ONBOARDING_DEFAULT_APP_SLUG=starter-app`
+
+Behavior when a new Slack guest is detected (`team_join` / `user_change`):
+
+1. n8n user provisioning executes.
+2. Full onboarding webhook is called automatically.
+3. Slack channel + prompt templates + repo bootstrap + Vercel bootstrap execute without manual operator action.
+
 ## Vercel + Neon Onboarding
 
 If Neon was created from Vercel console, prepare and set at least:

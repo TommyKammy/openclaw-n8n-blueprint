@@ -59,6 +59,8 @@ services:
       interval: 20s
       timeout: 7s
       retries: 10
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - app_net
 
@@ -121,6 +123,11 @@ services:
       GOG_ACCOUNT: ${GOG_ACCOUNT}
       GOG_KEYRING_PASSWORD: ${GOG_KEYRING_PASSWORD}
       GOG_SEND_TIMEOUT: 25
+      FULL_ONBOARDING_ENABLED: ${FULL_ONBOARDING_ENABLED}
+      FULL_ONBOARDING_WEBHOOK_URL: ${FULL_ONBOARDING_WEBHOOK_URL}
+      FULL_ONBOARDING_TOKEN: ${FULL_ONBOARDING_TOKEN}
+      FULL_ONBOARDING_DEFAULT_APP_SLUG: ${FULL_ONBOARDING_DEFAULT_APP_SLUG}
+      FULL_ONBOARDING_SKIP_WORKSPACE_INVITE: ${FULL_ONBOARDING_SKIP_WORKSPACE_INVITE}
     volumes:
       - slack_provisioner_data:/var/lib/slack-n8n-provisioner
     read_only: true

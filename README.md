@@ -116,6 +116,13 @@ For full guest automation (channel + repo + deploy bootstrap):
 - `GITHUB_OWNER`, `GUEST_TEMPLATE_REPO`, `GITHUB_TOKEN`
 - `VERCEL_TOKEN`, `VERCEL_ORG_ID`
 
+For zero-touch trigger from Slack guest events:
+
+- `FULL_ONBOARDING_ENABLED=true`
+- `FULL_ONBOARDING_WEBHOOK_URL`
+- `FULL_ONBOARDING_TOKEN`
+- `FULL_ONBOARDING_DEFAULT_APP_SLUG`
+
 Optional Teams provisioning vars:
 
 - `TEAMS_ENABLED=true`

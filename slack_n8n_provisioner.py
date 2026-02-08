@@ -48,6 +48,12 @@ class Config:
     ONBOARDING_MODE = os.environ.get("ONBOARDING_MODE", "setup_link")
     ONBOARDING_SETUP_LINK = os.environ.get("ONBOARDING_SETUP_LINK", "https://n8n.example.com/signin")
 
+    FULL_ONBOARDING_ENABLED = env_bool("FULL_ONBOARDING_ENABLED", False)
+    FULL_ONBOARDING_WEBHOOK_URL = os.environ.get("FULL_ONBOARDING_WEBHOOK_URL", "")
+    FULL_ONBOARDING_TOKEN = os.environ.get("FULL_ONBOARDING_TOKEN", "")
+    FULL_ONBOARDING_DEFAULT_APP_SLUG = os.environ.get("FULL_ONBOARDING_DEFAULT_APP_SLUG", "starter-app")
+    FULL_ONBOARDING_SKIP_WORKSPACE_INVITE = env_bool("FULL_ONBOARDING_SKIP_WORKSPACE_INVITE", True)
+
     GOG_ACCOUNT = os.environ.get("GOG_ACCOUNT", "oc.w.kawada@gmail.com")
     GOG_KEYRING_PASSWORD = os.environ.get("GOG_KEYRING_PASSWORD", "")
     GOG_SEND_TIMEOUT = int(os.environ.get("GOG_SEND_TIMEOUT", "25"))
@@ -93,6 +99,18 @@ def init_db(path):
               status TEXT NOT NULL,
               updated_at INTEGER NOT NULL,
               reason TEXT,
+              PRIMARY KEY(provider, external_user_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS full_onboarding_runs (
+              provider TEXT NOT NULL,
+              external_user_id TEXT NOT NULL,
+              requested_at INTEGER NOT NULL,
+              status TEXT NOT NULL,
+              detail TEXT,
               PRIMARY KEY(provider, external_user_id)
             )
             """
@@ -240,6 +258,63 @@ def send_onboarding_email(email, invite_url=None):
         raise RuntimeError(f"gog send failed: {res.stderr.strip()[:300]}")
 
 
+def normalize_guest_name(safe_user, email, fallback_user_id):
+    profile = safe_user.get("profile", {}) if isinstance(safe_user, dict) else {}
+    candidates = [
+        (profile.get("display_name") or "").strip(),
+        (profile.get("real_name") or "").strip(),
+        (safe_user.get("real_name") or "").strip() if isinstance(safe_user, dict) else "",
+    ]
+    local = (email.split("@")[0] if email and "@" in email else "").strip()
+    if local:
+        candidates.append(local)
+    if fallback_user_id:
+        candidates.append(str(fallback_user_id))
+    for c in candidates:
+        if c:
+            return c
+    return "guest"
+
+
+def call_full_onboarding(payload):
+    if not CFG.FULL_ONBOARDING_WEBHOOK_URL:
+        raise RuntimeError("missing FULL_ONBOARDING_WEBHOOK_URL")
+    req = urllib.request.Request(CFG.FULL_ONBOARDING_WEBHOOK_URL, data=json.dumps(payload).encode("utf-8"), method="POST")
+    req.add_header("Content-Type", "application/json")
+    if CFG.FULL_ONBOARDING_TOKEN:
+        req.add_header("Authorization", f"Bearer {CFG.FULL_ONBOARDING_TOKEN}")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            out = json.loads(resp.read().decode("utf-8")) if resp.readable() else {}
+            return out
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"full_onboarding_failed: {e.code} {body[:300]}")
+
+
+def full_onboarding_status(provider, external_user_id):
+    rows = db_exec(
+        "SELECT status FROM full_onboarding_runs WHERE provider=? AND external_user_id=? LIMIT 1",
+        (provider, external_user_id),
+        fetch=True,
+    ) or []
+    return rows[0]["status"] if rows else None
+
+
+def upsert_full_onboarding(provider, external_user_id, status, detail=""):
+    db_exec(
+        """
+        INSERT INTO full_onboarding_runs (provider, external_user_id, requested_at, status, detail)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(provider, external_user_id) DO UPDATE SET
+          requested_at=excluded.requested_at,
+          status=excluded.status,
+          detail=excluded.detail
+        """,
+        (provider, external_user_id, now_epoch(), status, detail[:500]),
+    )
+
+
 def domain_allowed(email):
     if not CFG.ALLOWED_EMAIL_DOMAINS:
         return True
@@ -294,6 +369,29 @@ def process_slack_event(row):
     send_onboarding_email(email, created.get("inviteAcceptUrl"))
     status = "created" if created.get("created") else "exists"
     upsert_mapping("slack", slack_user_id, team_id, email, created.get("id"), status, "ok")
+
+    if CFG.FULL_ONBOARDING_ENABLED:
+        current = full_onboarding_status("slack", slack_user_id)
+        if current != "done":
+            guest_name = normalize_guest_name(safe_user, email, slack_user_id)
+            app_slug = CFG.FULL_ONBOARDING_DEFAULT_APP_SLUG
+            payload = {
+                "guest_name": guest_name,
+                "guest_email": email,
+                "guest_slack_user_id": slack_user_id,
+                "app_slug": app_slug,
+                "description": f"Auto-onboarded app for {guest_name}",
+                "skip_workspace_invite": CFG.FULL_ONBOARDING_SKIP_WORKSPACE_INVITE,
+            }
+            try:
+                out = call_full_onboarding(payload)
+                if out.get("ok"):
+                    upsert_full_onboarding("slack", slack_user_id, "done", json.dumps(out, ensure_ascii=True))
+                else:
+                    upsert_full_onboarding("slack", slack_user_id, "failed", json.dumps(out, ensure_ascii=True))
+            except Exception as exc:
+                upsert_full_onboarding("slack", slack_user_id, "failed", str(exc))
+
     db_exec("UPDATE events SET status='done', reason=? WHERE id=?", ("provisioned", row["id"]))
 
 

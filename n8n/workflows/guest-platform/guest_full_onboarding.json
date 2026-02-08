@@ -36,7 +36,7 @@
             {
               "id": "cfg1",
               "name": "automation_url",
-              "value": "http://HOST_GATEWAY_IP:18111/guest-platform/full-onboard",
+              "value": "http://host.docker.internal:18111/guest-platform/full-onboard",
               "type": "string"
             },
             {

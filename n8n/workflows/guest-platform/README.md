@@ -43,3 +43,5 @@ For full onboarding webhook automation:
   - `automation_token`
   - `operator_channel`
   - `slack_token`
+- Recommended in Docker: `automation_url=http://host.docker.internal:18111/guest-platform/full-onboard`
+  and add `host.docker.internal:host-gateway` to the n8n container `extra_hosts`.
