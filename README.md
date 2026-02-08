@@ -56,8 +56,10 @@ This repository is designed for fast reproducibility on a new host.
 - `scripts/teams/` - Graph subscription create/renew helpers
 - `scripts/guest-platform/` - guest repository bootstrap/protection scripts
 - `n8n/workflows/guest-platform/` - importable guest platform workflows
+- `n8n/workflows/ops-automation/` - OpenClaw operator workflows (daily checks, triage, safe repair, approvals)
 - `docs/guest-platform/` - operations, security model, and incident runbook
 - `docs/guest-platform/CURRENT_SPEC.md` - validated current guest platform behavior/spec
+- `docs/guest-platform/OPS_AUTOMATION.md` - OpenClaw operator automation specification
 - `SETUP-GUIDE.md` - detailed setup/ops notes
 
 ## Quick Start

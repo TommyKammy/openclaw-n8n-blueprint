@@ -1,0 +1,325 @@
+{
+  "name": "ops_auto_repair_safe",
+  "nodes": [
+    {
+      "id": "Webhook_Repair",
+      "name": "Safe Repair Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "3f8f8f32e97a401c88c58954",
+      "position": [220, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ops/auto-repair-safe",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "IF_Auth",
+      "name": "Auth Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.headers.authorization || $json.headers.Authorization || ''}}",
+              "operation": "equals",
+              "value2": "Bearer REPLACE_OPS_TOKEN"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Function_Normalize",
+      "name": "Normalize Repair Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [700, 220],
+      "parameters": {
+        "functionCode": "const body = $json.body ?? $json;\nconst requestId = body.request_id || `repair-${Date.now()}`;\nconst workflowIds = Array.isArray(body.workflow_ids) ? body.workflow_ids.filter(Boolean) : [];\nconst incident = body.incident || 'unspecified';\nconst n8nBaseUrl = body.n8n_base_url || 'https://n8n.example.com';\nconst n8nApiKey = body.n8n_api_key || 'REPLACE_N8N_API_KEY';\nreturn [{ json: { request_id: requestId, incident, workflow_ids: workflowIds, count: workflowIds.length, channel: body.channel || '', n8n_base_url: n8nBaseUrl, n8n_api_key: n8nApiKey } }];"
+      }
+    },
+    {
+      "id": "IF_HasWorkflows",
+      "name": "Has workflow IDs?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [940, 220],
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.count}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Function_Expand",
+      "name": "Expand Workflow IDs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1180, 140],
+      "parameters": {
+        "functionCode": "const ids = $json.workflow_ids || [];\nreturn ids.map((id) => ({ json: { workflow_id: id, request_id: $json.request_id, incident: $json.incident, channel: $json.channel || '', n8n_base_url: $json.n8n_base_url, n8n_api_key: $json.n8n_api_key } }));"
+      }
+    },
+    {
+      "id": "HTTP_Activate",
+      "name": "Activate Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1410, 140],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.n8n_base_url + '/api/v1/workflows/' + $json.workflow_id + '/activate'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-API-KEY",
+              "value": "={{$json.n8n_api_key}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}",
+        "options": {
+          "ignoreResponseCode": true
+        }
+      }
+    },
+    {
+      "id": "Function_Summary",
+      "name": "Summarize Repair",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1640, 140],
+      "parameters": {
+        "functionCode": "const ids = items.map((i) => i.json.workflow_id);\nconst requestId = items[0]?.json.request_id || `repair-${Date.now()}`;\nconst incident = items[0]?.json.incident || 'unspecified';\nconst channel = items[0]?.json.channel || '';\nconst text = [\n  '*Safe Auto-Repair Completed*',\n  `request_id: ${requestId}`,\n  `incident: ${incident}`,\n  `activated_workflows: ${ids.length}`,\n  ...ids.map((id) => `- ${id}`)\n].join('\\n');\nreturn [{ json: { request_id: requestId, repaired: ids.length, workflows: ids, text, channel } }];"
+      }
+    },
+    {
+      "id": "Function_Noop",
+      "name": "Noop Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1180, 300],
+      "parameters": {
+        "functionCode": "const requestId = $json.request_id || `repair-${Date.now()}`;\nconst text = [\n  '*Safe Auto-Repair Skipped*',\n  `request_id: ${requestId}`,\n  'reason: no workflow_ids provided'\n].join('\\n');\nreturn [{ json: { request_id: requestId, repaired: 0, workflows: [], text, channel: $json.channel || '' } }];"
+      }
+    },
+    {
+      "id": "Set_Channel",
+      "name": "Ensure Operator Channel",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1870, 220],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ch",
+              "name": "channel",
+              "value": "={{$json.channel || 'CXXXXXXXX'}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "HTTP_Slack",
+      "name": "Post Repair Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2100, 220],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer xoxb-REPLACE_ME"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { channel: $json.channel, text: $json.text } }}"
+      }
+    },
+    {
+      "id": "Respond_Success",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2320, 220],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, request_id: $json.request_id, repaired: $json.repaired, workflows: $json.workflows } }}"
+      }
+    },
+    {
+      "id": "Respond_Unauthorized",
+      "name": "Respond Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [700, 460],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 401,
+        "responseBody": "={{ { ok: false, error: 'unauthorized' } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Safe Repair Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Valid?": {
+      "main": [
+        [
+          {
+            "node": "Normalize Repair Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Repair Request": {
+      "main": [
+        [
+          {
+            "node": "Has workflow IDs?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has workflow IDs?": {
+      "main": [
+        [
+          {
+            "node": "Expand Workflow IDs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Noop Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Workflow IDs": {
+      "main": [
+        [
+          {
+            "node": "Activate Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Activate Workflow": {
+      "main": [
+        [
+          {
+            "node": "Summarize Repair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Repair": {
+      "main": [
+        [
+          {
+            "node": "Ensure Operator Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Noop Summary": {
+      "main": [
+        [
+          {
+            "node": "Ensure Operator Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Operator Channel": {
+      "main": [
+        [
+          {
+            "node": "Post Repair Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Repair Result": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

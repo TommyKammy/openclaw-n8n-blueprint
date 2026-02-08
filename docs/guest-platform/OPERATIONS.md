@@ -68,6 +68,17 @@ After import:
 2. Set active mode only after test payloads pass.
 3. Add operator Slack channel IDs in workflow variables.
 
+## Ops Automation Workflows (OpenClaw Operator)
+
+Import JSON files under `n8n/workflows/ops-automation/`:
+
+- `ops_daily_health_check.json`
+- `ops_incident_triage.json`
+- `ops_auto_repair_safe.json`
+- `ops_human_approval_gate.json`
+
+Reference: `docs/guest-platform/OPS_AUTOMATION.md`
+
 ## Test Matrix
 
 - Request intake webhook with duplicate payloads (idempotency check).

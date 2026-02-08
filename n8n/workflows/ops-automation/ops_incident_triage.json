@@ -1,0 +1,137 @@
+{
+  "name": "ops_incident_triage",
+  "nodes": [
+    {
+      "id": "Webhook_Triage",
+      "name": "Incident Triage Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "58c2f6e290d94aa088d9a88e",
+      "position": [220, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ops/incident-triage",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "Function_Triage",
+      "name": "Classify Incident",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [500, 300],
+      "parameters": {
+        "functionCode": "const body = $json.body ?? $json;\nconst source = (body.source || 'unknown').toString();\nconst error = (body.error || body.message || '').toString();\nconst status = Number(body.status || 0);\nlet severity = 'low';\nlet category = 'general';\nif (status >= 500 || /panic|fatal|outage|down/i.test(error)) { severity = 'critical'; category = 'service'; }\nelse if (/webhook|404|delivery/i.test(error)) { severity = 'high'; category = 'webhook'; }\nelse if (/deploy|migration|vercel|neon/i.test(error)) { severity = 'high'; category = 'deploy'; }\nelse if (/auth|token|permission|forbidden|unauthorized/i.test(error)) { severity = 'high'; category = 'auth'; }\nconst recommendations = {\n  webhook: ['reactivate webhook workflows', 'verify webhook URL', 'check GitHub delivery logs'],\n  deploy: ['check latest Actions run logs', 'verify DATABASE_URL and VERCEL_* secrets', 're-run deployment'],\n  auth: ['rotate token if compromised', 're-check scopes/permissions', 're-test API auth'],\n  service: ['check n8n/openclaw process health', 'inspect ingress and TLS', 'escalate to operator immediately'],\n  general: ['collect logs and context', 'classify blast radius', 'decide safe auto-repair']\n};\nconst next = recommendations[category] || recommendations.general;\nconst requestId = body.request_id || `inc-${Date.now()}`;\nconst text = [\n  '*Incident Triage*',\n  `request_id: ${requestId}`,\n  `source: ${source}`,\n  `severity: ${severity}`,\n  `category: ${category}`,\n  `error: ${error || 'n/a'}`,\n  'next_actions:',\n  ...next.map((x, i) => `${i + 1}. ${x}`)\n].join('\\n');\nreturn [{ json: { request_id: requestId, severity, category, source, error, next_actions: next, text, channel: body.channel || '' } }];"
+      }
+    },
+    {
+      "id": "Set_Channel",
+      "name": "Ensure Operator Channel",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [760, 300],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ch1",
+              "name": "channel",
+              "value": "={{$json.channel || 'CXXXXXXXX'}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "HTTP_Slack",
+      "name": "Post Triage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1010, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer xoxb-REPLACE_ME"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { channel: $json.channel, text: $json.text } }}"
+      }
+    },
+    {
+      "id": "Respond_Triage",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1240, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, request_id: $json.request_id, severity: $json.severity, category: $json.category, next_actions: $json.next_actions } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incident Triage Webhook": {
+      "main": [
+        [
+          {
+            "node": "Classify Incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Incident": {
+      "main": [
+        [
+          {
+            "node": "Ensure Operator Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Operator Channel": {
+      "main": [
+        [
+          {
+            "node": "Post Triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Triage": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

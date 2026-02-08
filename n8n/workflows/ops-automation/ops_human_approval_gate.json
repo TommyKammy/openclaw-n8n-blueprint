@@ -1,0 +1,319 @@
+{
+  "name": "ops_human_approval_gate",
+  "nodes": [
+    {
+      "id": "Webhook_Approval",
+      "name": "Approval Gate Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "9388c94e7d8f4eceb478f2ed",
+      "position": [220, 320],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ops/human-approval-gate",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "IF_Auth",
+      "name": "Auth Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 320],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.headers.authorization || $json.headers.Authorization || ''}}",
+              "operation": "equals",
+              "value2": "Bearer REPLACE_OPS_TOKEN"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Function_Normalize",
+      "name": "Normalize Approval Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [700, 240],
+      "parameters": {
+        "functionCode": "const body = $json.body ?? $json;\nconst requestId = body.request_id || `approval-${Date.now()}`;\nconst operation = body.operation || 'unspecified_operation';\nconst requestedBy = body.requested_by || 'unknown';\nconst decision = (body.decision || '').toString().toLowerCase();\nconst approverId = body.approver_id || '';\nconst note = body.note || '';\nconst allowedApprovers = body.allowed_approvers || 'UXXXXXXXX,UYYYYYYYY';\nreturn [{ json: { request_id: requestId, operation, requested_by: requestedBy, decision, approver_id: approverId, note, allowed_approvers: allowedApprovers, channel: body.channel || '' } }];"
+      }
+    },
+    {
+      "id": "IF_HasDecision",
+      "name": "Decision Provided?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [940, 240],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.decision}}",
+              "operation": "regex",
+              "value2": "^(approve|approved|reject|rejected)$"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "IF_ApproverAllowed",
+      "name": "Approver Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1180, 160],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{(',' + ($json.allowed_approvers || '') + ',').includes(',' + ($json.approver_id || '') + ',')}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Function_Pending",
+      "name": "Build Pending Message",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1180, 340],
+      "parameters": {
+        "functionCode": "const text = [\n  '*Approval Required*',\n  `request_id: ${$json.request_id}`,\n  `operation: ${$json.operation}`,\n  `requested_by: ${$json.requested_by}`,\n  'submit decision by calling this webhook with decision=approve|reject and approver_id'\n].join('\\n');\nreturn [{ json: { request_id: $json.request_id, state: 'pending', text, channel: $json.channel || '' } }];"
+      }
+    },
+    {
+      "id": "Function_Finalize",
+      "name": "Finalize Decision",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1410, 120],
+      "parameters": {
+        "functionCode": "const approved = ['approve','approved'].includes($json.decision);\nconst state = approved ? 'approved' : 'rejected';\nconst text = [\n  '*Approval Decision*',\n  `request_id: ${$json.request_id}`,\n  `operation: ${$json.operation}`,\n  `state: ${state}`,\n  `approver_id: ${$json.approver_id}`,\n  `note: ${$json.note || 'n/a'}`\n].join('\\n');\nreturn [{ json: { request_id: $json.request_id, state, approved, text, channel: $json.channel || '' } }];"
+      }
+    },
+    {
+      "id": "Function_ApproverDenied",
+      "name": "Approver Not Allowed",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1410, 220],
+      "parameters": {
+        "functionCode": "const text = [\n  '*Approval Rejected (Policy)*',\n  `request_id: ${$json.request_id}`,\n  `operation: ${$json.operation}`,\n  `approver_id: ${$json.approver_id}`,\n  'reason: approver not in OPS_APPROVER_SLACK_USER_IDS'\n].join('\\n');\nreturn [{ json: { request_id: $json.request_id, state: 'rejected_policy', approved: false, text, channel: $json.channel || '' } }];"
+      }
+    },
+    {
+      "id": "Set_Channel",
+      "name": "Ensure Operator Channel",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1640, 240],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ch",
+              "name": "channel",
+              "value": "={{$json.channel || 'CXXXXXXXX'}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "HTTP_Slack",
+      "name": "Post Approval Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1860, 240],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer xoxb-REPLACE_ME"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { channel: $json.channel, text: $json.text } }}"
+      }
+    },
+    {
+      "id": "Respond_Success",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2080, 240],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, request_id: $json.request_id, state: $json.state, approved: $json.approved ?? null } }}"
+      }
+    },
+    {
+      "id": "Respond_Unauthorized",
+      "name": "Respond Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [700, 480],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 401,
+        "responseBody": "={{ { ok: false, error: 'unauthorized' } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Approval Gate Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Valid?": {
+      "main": [
+        [
+          {
+            "node": "Normalize Approval Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Approval Payload": {
+      "main": [
+        [
+          {
+            "node": "Decision Provided?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Provided?": {
+      "main": [
+        [
+          {
+            "node": "Approver Allowed?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Pending Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approver Allowed?": {
+      "main": [
+        [
+          {
+            "node": "Finalize Decision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Approver Not Allowed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Pending Message": {
+      "main": [
+        [
+          {
+            "node": "Ensure Operator Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Decision": {
+      "main": [
+        [
+          {
+            "node": "Ensure Operator Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approver Not Allowed": {
+      "main": [
+        [
+          {
+            "node": "Ensure Operator Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Operator Channel": {
+      "main": [
+        [
+          {
+            "node": "Post Approval Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Approval Status": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

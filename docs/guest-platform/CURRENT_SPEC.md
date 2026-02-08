@@ -137,3 +137,18 @@ Recommendation:
 3. Create guest channel in Slack (`#app-dev-<guest-slug>`), invite bot and guest.
 4. Open PR in guest repo and confirm PR notification.
 5. Merge PR and confirm deploy callback notification.
+
+## 11) OpenClaw Ops Automation Layer
+
+Implemented operator workflows:
+
+- `ops_daily_health_check`
+- `ops_incident_triage`
+- `ops_auto_repair_safe`
+- `ops_human_approval_gate`
+
+Implementation notes:
+
+- Exported workflows are provided under `n8n/workflows/ops-automation/`.
+- Runtime values (tokens/channel IDs/API keys) should be injected during import/activation.
+- Live host validation confirms triage, safe repair, and approval gate executions succeed.

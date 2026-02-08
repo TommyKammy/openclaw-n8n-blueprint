@@ -1,0 +1,167 @@
+{
+  "name": "ops_daily_health_check",
+  "nodes": [
+    {
+      "id": "Cron_Daily",
+      "name": "Daily Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 260],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Set_Context",
+      "name": "Set Ops Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 260],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "n8n_base_url",
+              "value": "https://n8n.example.com",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "n8n_api_key",
+              "value": "REPLACE_N8N_API_KEY",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "operator_channel",
+              "value": "CXXXXXXXX",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "HTTP_N8N_API",
+      "name": "Check n8n API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 260],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$json.n8n_base_url + '/api/v1/workflows?limit=1'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-API-KEY",
+              "value": "={{$json.n8n_api_key}}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "Function_Summary",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [940, 260],
+      "parameters": {
+        "functionCode": "const workflows = Array.isArray($json.data) ? $json.data.length : 0;\nconst ts = new Date().toISOString();\nconst text = [\n  '*Daily Ops Health Check*',\n  `Timestamp: ${ts}`,\n  'n8n API: OK',\n  `Sample workflows returned: ${workflows}`,\n  'Status: healthy'\n].join('\\n');\nreturn [{ json: { text, channel: $json.operator_channel || '' } }];"
+      }
+    },
+    {
+      "id": "HTTP_Slack",
+      "name": "Post Health Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1180, 260],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer xoxb-REPLACE_ME"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { channel: $json.channel, text: $json.text } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Daily Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Ops Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Ops Context": {
+      "main": [
+        [
+          {
+            "node": "Check n8n API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check n8n API": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Post Health Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}
