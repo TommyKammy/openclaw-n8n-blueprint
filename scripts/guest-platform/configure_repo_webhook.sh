@@ -21,6 +21,27 @@ if [[ -z "${WEBHOOK_SECRET}" ]]; then
 fi
 
 echo "Configuring PR webhook for ${FULL_REPO} -> ${WEBHOOK_URL}"
+EXISTING_ID="$(gh api "/repos/${FULL_REPO}/hooks" --jq '.[] | select(.name=="web" and (.events | index("pull_request"))) | .id' | head -n 1 || true)"
+
+if [[ -n "${EXISTING_ID}" ]]; then
+  gh api --method PATCH \
+    -H "Accept: application/vnd.github+json" \
+    "/repos/${FULL_REPO}/hooks/${EXISTING_ID}" \
+    --input - <<JSON
+{
+  "active": true,
+  "events": ["pull_request"],
+  "config": {
+    "url": "${WEBHOOK_URL}",
+    "content_type": "json",
+    "insecure_ssl": "0",
+    "secret": "${WEBHOOK_SECRET}"
+  }
+}
+JSON
+  echo "Webhook updated (id=${EXISTING_ID})."
+  exit 0
+fi
 
 gh api --method POST \
   -H "Accept: application/vnd.github+json" \
