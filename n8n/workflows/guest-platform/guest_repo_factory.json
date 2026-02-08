@@ -6,6 +6,7 @@
       "name": "Factory Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
+      "webhookId": "42f398bbf75d416d9097efc1",
       "position": [220, 300],
       "parameters": {
         "httpMethod": "POST",

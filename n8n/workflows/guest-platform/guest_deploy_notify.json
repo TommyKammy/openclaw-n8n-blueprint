@@ -6,6 +6,7 @@
       "name": "Deploy Callback Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
+      "webhookId": "f149ea93031e4f57a27f031f",
       "position": [240, 300],
       "parameters": {
         "httpMethod": "POST",

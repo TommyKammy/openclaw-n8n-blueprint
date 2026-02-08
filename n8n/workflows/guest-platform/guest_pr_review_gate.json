@@ -6,6 +6,7 @@
       "name": "GitHub PR Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
+      "webhookId": "8f54df5209a14937bcbf8f18",
       "position": [240, 280],
       "parameters": {
         "httpMethod": "POST",

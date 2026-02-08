@@ -6,6 +6,7 @@
       "name": "Request Intake Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
+      "webhookId": "26d3ce0fd07145b4a94f4f67",
       "position": [240, 300],
       "parameters": {
         "httpMethod": "POST",
