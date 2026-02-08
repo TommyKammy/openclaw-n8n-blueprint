@@ -57,6 +57,7 @@ This repository is designed for fast reproducibility on a new host.
 - `scripts/guest-platform/` - guest repository bootstrap/protection scripts
 - `n8n/workflows/guest-platform/` - importable guest platform workflows
 - `docs/guest-platform/` - operations, security model, and incident runbook
+- `docs/guest-platform/CURRENT_SPEC.md` - validated current guest platform behavior/spec
 - `SETUP-GUIDE.md` - detailed setup/ops notes
 
 ## Quick Start

@@ -76,8 +76,8 @@ After import:
 - Deploy callback notification with success and failure payloads.
 - Daily audit dry run with missing optional APIs.
 
-## Operational Notes (No Vercel Account Yet)
+## Operational Notes
 
-- Keep deploy workflow callback active.
-- Mark deployment status as `pending_vercel_setup` in Slack until account is ready.
-- Do not block repo bootstrap or PR loop on Vercel setup.
+- Source of truth for live validated behavior: `docs/guest-platform/CURRENT_SPEC.md`.
+- Keep deploy callback active even when Vercel deploy is skipped/fails, so Slack receives status.
+- Use channel IDs (not channel names) in env for stable Slack routing.
