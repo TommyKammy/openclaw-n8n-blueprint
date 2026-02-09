@@ -207,6 +207,27 @@ services:
     volumes:
       - guest_automation_state:/var/lib/guest-automation
 
+  knowledge-gateway:
+    build:
+      context: ./docker/knowledge-gateway
+      dockerfile: Dockerfile
+    container_name: knowledge-gateway
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      PORT: 8000
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-https://n8n-s-app01.tmcast.com/knowledge/oauth/callback}
+      INTERNAL_API_TOKEN: ${KNOWLEDGE_API_TOKEN}
+      ENCRYPTION_KEY: ${KNOWLEDGE_ENCRYPTION_KEY}
+    ports:
+      - "8000:8000"
+    networks:
+      - app_net
+
 volumes:
   n8n_postgres_data:
   n8n_app_data:

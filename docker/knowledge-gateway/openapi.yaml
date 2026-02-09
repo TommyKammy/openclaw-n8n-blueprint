@@ -1,0 +1,128 @@
+openapi: 3.1.0
+info:
+  title: Guest Knowledge Connector API
+  version: 1.0.0
+  description: OAuth and retrieval API for per-guest knowledge connections.
+servers:
+  - url: https://knowledge.example.com
+security:
+  - internalBearer: []
+paths:
+  /oauth/google/start:
+    post:
+      summary: Create Google OAuth URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [guest_id, slack_user_id]
+              properties:
+                guest_id: { type: string }
+                slack_user_id: { type: string }
+                redirect_hint: { type: string }
+      responses:
+        '200':
+          description: OAuth URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  auth_url: { type: string }
+                  state: { type: string }
+
+  /oauth/google/callback:
+    get:
+      summary: Handle Google OAuth callback
+      parameters:
+        - in: query
+          name: code
+          required: true
+          schema: { type: string }
+        - in: query
+          name: state
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Connection established
+
+  /knowledge/search:
+    post:
+      summary: Search guest knowledge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [guest_id, query]
+              properties:
+                guest_id: { type: string }
+                query: { type: string }
+                top_k:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 5
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        snippet: { type: string }
+                        source_id: { type: string }
+                        title: { type: string }
+                        source_url: { type: string }
+
+  /knowledge/sync/run:
+    post:
+      summary: Trigger sync for connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [connection_id]
+              properties:
+                connection_id: { type: string }
+      responses:
+        '202':
+          description: Sync accepted
+
+  /knowledge/disconnect:
+    post:
+      summary: Disconnect provider for guest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [connection_id]
+              properties:
+                connection_id: { type: string }
+                purge_index:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Disconnected
+
+components:
+  securitySchemes:
+    internalBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

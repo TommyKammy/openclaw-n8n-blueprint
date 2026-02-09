@@ -246,6 +246,36 @@ services:
     networks:
       - app_net
 
+  knowledge-gateway:
+    build:
+      context: ./docker/knowledge-gateway
+      dockerfile: Dockerfile
+    container_name: knowledge-gateway
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8000
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-https://n8n-s-app01.tmcast.com/knowledge/oauth/callback}
+      INTERNAL_API_TOKEN: ${KNOWLEDGE_API_TOKEN}
+      ENCRYPTION_KEY: ${KNOWLEDGE_ENCRYPTION_KEY}
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 5 -O - http://127.0.0.1:8000/health || exit 1"]
+      interval: 20s
+      timeout: 6s
+      retries: 10
+    networks:
+      - app_net
+
   nginx:
     image: nginx:1.27-alpine
     container_name: edge-nginx

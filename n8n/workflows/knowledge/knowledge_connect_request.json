@@ -1,0 +1,206 @@
+{
+  "name": "knowledge_connect_request",
+  "nodes": [
+    {
+      "id": "Webhook_Connect",
+      "name": "Connect Request Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "knowledge-connect-request",
+      "position": [220, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "knowledge/connect-request",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "Set_Params",
+      "name": "Extract Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [380, 300],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "guest_id",
+              "value": "={{$json.body.guest_id || $json.guest_id}}",
+              "type": "string"
+            },
+            {
+              "id": "p2",
+              "name": "slack_user_id",
+              "value": "={{$json.body.slack_user_id || $json.slack_user_id}}",
+              "type": "string"
+            },
+            {
+              "id": "p3",
+              "name": "channel_id",
+              "value": "={{$json.body.channel_id || $json.channel_id}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "HTTP_OAuth_Start",
+      "name": "Start OAuth Flow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [540, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.KNOWLEDGE_API_BASE_URL || 'http://knowledge-gateway:8000'}}/oauth/google/start",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "guest_id": "={{$node['Extract Parameters'].json.guest_id}}",
+          "slack_user_id": "={{$node['Extract Parameters'].json.slack_user_id}}",
+          "redirect_hint": "slack"
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "knowledge-api-token",
+          "name": "Knowledge API Token"
+        }
+      }
+    },
+    {
+      "id": "Slack_DM",
+      "name": "Send Auth Link to User",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [700, 300],
+      "parameters": {
+        "channel": "={{$node['Extract Parameters'].json.slack_user_id}}",
+        "text": "=Click this link to connect your Google Drive: {{$node['Start OAuth Flow'].json.auth_url}}",
+        "attachments": [],
+        "blocks": {
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "Hi! Let us connect your Google Drive to enable knowledge search."
+              }
+            },
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "Click the button below to authorize access to your Google Drive files."
+              }
+            },
+            {
+              "type": "actions",
+              "elements": [
+                {
+                  "type": "button",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Connect Google Drive"
+                  },
+                  "url": "={{$node['Start OAuth Flow'].json.auth_url}}",
+                  "style": "primary"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "slack-bot-token",
+          "name": "Slack Bot Token"
+        }
+      }
+    },
+    {
+      "id": "Response_Success",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [860, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ 'status': 'ok', 'message': 'Connection request sent. Check your DMs for the authorization link.' }"
+      }
+    },
+    {
+      "id": "Response_Error",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [860, 500],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ 'status': 'error', 'message': $json.message || 'Failed to initiate connection' }",
+        "statusCode": "=500"
+      }
+    }
+  ],
+  "connections": {
+    "Connect Request Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Parameters": {
+      "main": [
+        [
+          {
+            "node": "Start OAuth Flow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start OAuth Flow": {
+      "main": [
+        [
+          {
+            "node": "Send Auth Link to User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Auth Link to User": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["knowledge", "oauth", "google-drive"]
+}

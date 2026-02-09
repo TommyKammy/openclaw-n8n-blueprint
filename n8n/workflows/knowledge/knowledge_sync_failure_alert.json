@@ -1,0 +1,265 @@
+{
+  "name": "knowledge_sync_failure_alert",
+  "nodes": [
+    {
+      "id": "Webhook_Failure",
+      "name": "Sync Failure Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "knowledge-sync-failure",
+      "position": [220, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "knowledge/sync-failure",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "Set_Params",
+      "name": "Extract Failure Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [380, 300],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "connection_id",
+              "value": "={{$json.body.connection_id || $json.connection_id}}",
+              "type": "string"
+            },
+            {
+              "id": "p2",
+              "name": "guest_id",
+              "value": "={{$json.body.guest_id || $json.guest_id}}",
+              "type": "string"
+            },
+            {
+              "id": "p3",
+              "name": "error_type",
+              "value": "={{$json.body.error_type || $json.error_type || 'unknown'}}",
+              "type": "string"
+            },
+            {
+              "id": "p4",
+              "name": "error_message",
+              "value": "={{$json.body.error_message || $json.error_message || 'No details available'}}",
+              "type": "string"
+            },
+            {
+              "id": "p5",
+              "name": "slack_user_id",
+              "value": "={{$json.body.slack_user_id || $json.slack_user_id}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "IF_Error_Type",
+      "name": "Classify Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [540, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node['Extract Failure Data'].json.error_type}}",
+              "operation": "equals",
+              "value2": "auth_expired"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Slack_Operator_Alert",
+      "name": "Alert Operator Channel",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [700, 200],
+      "parameters": {
+        "channel": "={{$vars.SLACK_OPERATOR_ALERT_CHANNEL || '#operator-alerts'}}",
+        "text": "=Knowledge sync failed for guest {{$node['Extract Failure Data'].json.guest_id}}: {{$node['Extract Failure Data'].json.error_type}}",
+        "attachments": [],
+        "blocks": {
+          "blocks": [
+            {
+              "type": "header",
+              "text": {
+                "type": "plain_text",
+                "text": "Knowledge Sync Failure",
+                "emoji": true
+              }
+            },
+            {
+              "type": "section",
+              "fields": [
+                {
+                  "type": "mrkdwn",
+                  "text": "=*Guest ID:*\n{{$node['Extract Failure Data'].json.guest_id}}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "=*Connection ID:*\n{{$node['Extract Failure Data'].json.connection_id}}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "=*Error Type:*\n{{$node['Extract Failure Data'].json.error_type}}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "=*Time:*\n{{new Date().toISOString()}}"
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "=*Error Details:*\n```{{$node['Extract Failure Data'].json.error_message}}```"
+              }
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "slack-bot-token",
+          "name": "Slack Bot Token"
+        }
+      }
+    },
+    {
+      "id": "Slack_Reconnect_DM",
+      "name": "Send Reconnect DM",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [700, 400],
+      "parameters": {
+        "channel": "={{$node['Extract Failure Data'].json.slack_user_id}}",
+        "text": "=Your Google Drive connection needs to be reauthorized. Click to reconnect.",
+        "attachments": [],
+        "blocks": {
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "Your Google Drive connection has expired. Please reconnect to continue using knowledge search."
+              }
+            },
+            {
+              "type": "actions",
+              "elements": [
+                {
+                  "type": "button",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Reconnect Google Drive"
+                  },
+                  "action_id": "reconnect_drive",
+                  "value": "={{$node['Extract Failure Data'].json.guest_id}}"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "slack-bot-token",
+          "name": "Slack Bot Token"
+        }
+      }
+    },
+    {
+      "id": "Response_OK",
+      "name": "OK Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [860, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ 'status': 'alert_sent' }"
+      }
+    }
+  ],
+  "connections": {
+    "Sync Failure Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Failure Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Failure Data": {
+      "main": [
+        [
+          {
+            "node": "Classify Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Error": {
+      "main": [
+        [
+          {
+            "node": "Alert Operator Channel",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Reconnect DM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert Operator Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Operator Channel": {
+      "main": [
+        [
+          {
+            "node": "OK Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reconnect DM": {
+      "main": [
+        [
+          {
+            "node": "OK Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["knowledge", "alert", "sync"]
+}

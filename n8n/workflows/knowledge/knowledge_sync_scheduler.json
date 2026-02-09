@@ -1,0 +1,221 @@
+{
+  "name": "knowledge_sync_scheduler",
+  "nodes": [
+    {
+      "id": "Schedule",
+      "name": "Cron Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "HTTP_List_Connections",
+      "name": "Get Active Connections",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [380, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$vars.KNOWLEDGE_API_BASE_URL || 'http://knowledge-gateway:8000'}}/admin/connections?status=active",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "knowledge-api-token",
+          "name": "Knowledge API Token"
+        }
+      }
+    },
+    {
+      "id": "Split_Connections",
+      "name": "Split Connections",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [540, 300],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "HTTP_Trigger_Sync",
+      "name": "Trigger Sync",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [700, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.KNOWLEDGE_API_BASE_URL || 'http://knowledge-gateway:8000'}}/knowledge/sync/run",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "connection_id": "={{$json.id}}"
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "knowledge-api-token",
+          "name": "Knowledge API Token"
+        }
+      }
+    },
+    {
+      "id": "Slack_Summary",
+      "name": "Send Sync Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [860, 300],
+      "parameters": {
+        "channel": "={{$vars.SLACK_OPERATOR_ALERT_CHANNEL || '#operator-alerts'}}",
+        "text": "=Knowledge sync completed for {{$json.connection_count || 0}} connections",
+        "attachments": [],
+        "blocks": {
+          "blocks": [
+            {
+              "type": "header",
+              "text": {
+                "type": "plain_text",
+                "text": "Knowledge Sync Report"
+              }
+            },
+            {
+              "type": "section",
+              "fields": [
+                {
+                  "type": "mrkdwn",
+                  "text": "=*Sync Time:*\n{{new Date().toISOString()}}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "=*Connections Synced:*\n{{$json.connection_count || 0}}"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "slack-bot-token",
+          "name": "Slack Bot Token"
+        }
+      }
+    },
+    {
+      "id": "Aggregate_Results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1.1,
+      "position": [700, 500],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      }
+    },
+    {
+      "id": "Set_Count",
+      "name": "Set Count",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [860, 500],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "connection_count",
+              "value": "={{Object.keys($json).length}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron Schedule": {
+      "main": [
+        [
+          {
+            "node": "Get Active Connections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Connections": {
+      "main": [
+        [
+          {
+            "node": "Split Connections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Connections": {
+      "main": [
+        [
+          {
+            "node": "Trigger Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Sync": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Set Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Count": {
+      "main": [
+        [
+          {
+            "node": "Send Sync Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["knowledge", "sync", "scheduled"]
+}

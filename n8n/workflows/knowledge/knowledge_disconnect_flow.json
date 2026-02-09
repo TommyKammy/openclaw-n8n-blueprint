@@ -1,0 +1,265 @@
+{
+  "name": "knowledge_disconnect_flow",
+  "nodes": [
+    {
+      "id": "Webhook_Disconnect",
+      "name": "Disconnect Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "knowledge-disconnect",
+      "position": [220, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "knowledge/disconnect-request",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "Set_Params",
+      "name": "Extract Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [380, 300],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "connection_id",
+              "value": "={{$json.body.connection_id || $json.connection_id}}",
+              "type": "string"
+            },
+            {
+              "id": "p2",
+              "name": "guest_id",
+              "value": "={{$json.body.guest_id || $json.guest_id}}",
+              "type": "string"
+            },
+            {
+              "id": "p3",
+              "name": "slack_user_id",
+              "value": "={{$json.body.slack_user_id || $json.slack_user_id}}",
+              "type": "string"
+            },
+            {
+              "id": "p4",
+              "name": "purge_index",
+              "value": "={{$json.body.purge_index || $json.purge_index || false}}",
+              "type": "boolean"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "HTTP_Disconnect",
+      "name": "Disconnect Connection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [540, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.KNOWLEDGE_API_BASE_URL || 'http://knowledge-gateway:8000'}}/knowledge/disconnect",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "connection_id": "={{$node['Extract Request'].json.connection_id}}",
+          "purge_index": "={{$node['Extract Request'].json.purge_index}}"
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "knowledge-api-token",
+          "name": "Knowledge API Token"
+        }
+      }
+    },
+    {
+      "id": "Slack_Confirm_User",
+      "name": "Confirm to User",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [700, 300],
+      "parameters": {
+        "channel": "={{$node['Extract Request'].json.slack_user_id}}",
+        "text": "=Your Google Drive has been disconnected from knowledge search.",
+        "attachments": [],
+        "blocks": {
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "Your Google Drive connection has been successfully disconnected."
+              }
+            },
+            {
+              "type": "context",
+              "elements": [
+                {
+                  "type": "mrkdwn",
+                  "text": "=_Data purged: {{$node['Extract Request'].json.purge_index ? 'Yes' : 'No'}}_"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "slack-bot-token",
+          "name": "Slack Bot Token"
+        }
+      }
+    },
+    {
+      "id": "Slack_Notify_Operator",
+      "name": "Notify Operator",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [700, 500],
+      "parameters": {
+        "channel": "={{$vars.SLACK_OPERATOR_ALERT_CHANNEL || '#operator-alerts'}}",
+        "text": "=Guest {{$node['Extract Request'].json.guest_id}} disconnected their Google Drive",
+        "attachments": [],
+        "blocks": {
+          "blocks": [
+            {
+              "type": "header",
+              "text": {
+                "type": "plain_text",
+                "text": "Knowledge Connection Disconnected"
+              }
+            },
+            {
+              "type": "section",
+              "fields": [
+                {
+                  "type": "mrkdwn",
+                  "text": "=*Guest ID:*\n{{$node['Extract Request'].json.guest_id}}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "=*Connection ID:*\n{{$node['Extract Request'].json.connection_id}}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "=*Data Purged:*\n{{$node['Extract Request'].json.purge_index ? 'Yes' : 'No'}}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "=*Time:*\n{{new Date().toISOString()}}"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "slack-bot-token",
+          "name": "Slack Bot Token"
+        }
+      }
+    },
+    {
+      "id": "Response_Success",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [860, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ 'status': 'disconnected', 'message': 'Connection successfully disconnected' }"
+      }
+    },
+    {
+      "id": "Response_Error",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [860, 600],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ 'status': 'error', 'message': $json.message || 'Failed to disconnect' }",
+        "statusCode": "=500"
+      }
+    }
+  ],
+  "connections": {
+    "Disconnect Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Request": {
+      "main": [
+        [
+          {
+            "node": "Disconnect Connection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disconnect Connection": {
+      "main": [
+        [
+          {
+            "node": "Confirm to User",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Operator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm to User": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Operator": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["knowledge", "disconnect"]
+}
