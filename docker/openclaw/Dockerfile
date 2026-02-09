@@ -1,12 +1,12 @@
 FROM node:20-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl python3 tini \
+    ca-certificates curl python3 tini git \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g openclaw@latest gog
 
-RUN useradd -m -u 1000 -s /bin/bash openclaw
+RUN useradd -m -u 1001 -s /bin/bash openclaw
 USER openclaw
 WORKDIR /home/openclaw
 

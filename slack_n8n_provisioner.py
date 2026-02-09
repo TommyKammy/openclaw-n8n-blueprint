@@ -28,6 +28,9 @@ class Config:
 
     AUTO_PROVISION_ENABLED = env_bool("AUTO_PROVISION_ENABLED", False)
     REQUIRE_SLACK_EMAIL_VERIFICATION = env_bool("REQUIRE_SLACK_EMAIL_VERIFICATION", True)
+    # If true, only Slack guests (restricted/ultra_restricted) are provisioned.
+    # If false, normal members are also eligible (still subject to team/domain checks).
+    SLACK_REQUIRE_GUEST_ONLY = env_bool("SLACK_REQUIRE_GUEST_ONLY", True)
 
     ALLOWED_SLACK_TEAM_IDS = {x.strip() for x in os.environ.get("ALLOWED_SLACK_TEAM_IDS", "").split(",") if x.strip()}
     ALLOWED_EMAIL_DOMAINS = {x.strip().lower() for x in os.environ.get("ALLOWED_EMAIL_DOMAINS", "").split(",") if x.strip()}
@@ -49,10 +52,22 @@ class Config:
     ONBOARDING_SETUP_LINK = os.environ.get("ONBOARDING_SETUP_LINK", "https://n8n.example.com/signin")
 
     FULL_ONBOARDING_ENABLED = env_bool("FULL_ONBOARDING_ENABLED", False)
+    # If true, the full onboarding automation (channel/repo/etc.) triggers only for Slack guests.
+    # This is a safety default even when SLACK_REQUIRE_GUEST_ONLY is disabled.
+    FULL_ONBOARDING_REQUIRE_GUEST_ONLY = env_bool("FULL_ONBOARDING_REQUIRE_GUEST_ONLY", True)
     FULL_ONBOARDING_WEBHOOK_URL = os.environ.get("FULL_ONBOARDING_WEBHOOK_URL", "")
     FULL_ONBOARDING_TOKEN = os.environ.get("FULL_ONBOARDING_TOKEN", "")
     FULL_ONBOARDING_DEFAULT_APP_SLUG = os.environ.get("FULL_ONBOARDING_DEFAULT_APP_SLUG", "starter-app")
     FULL_ONBOARDING_SKIP_WORKSPACE_INVITE = env_bool("FULL_ONBOARDING_SKIP_WORKSPACE_INVITE", True)
+
+    # Off-boarding configuration
+    OFFBOARDING_ENABLED = env_bool("OFFBOARDING_ENABLED", False)
+    OFFBOARDING_WEBHOOK_URL = os.environ.get("OFFBOARDING_WEBHOOK_URL", "")
+    OFFBOARDING_TOKEN = os.environ.get("OFFBOARDING_TOKEN", "")
+    GITHUB_OWNER = os.environ.get("GITHUB_OWNER", "")
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+    GUEST_TEMPLATE_REPO = os.environ.get("GUEST_TEMPLATE_REPO", "")
+    VERCEL_TOKEN = os.environ.get("VERCEL_TOKEN", "")
 
     GOG_ACCOUNT = os.environ.get("GOG_ACCOUNT", "oc.w.kawada@gmail.com")
     GOG_KEYRING_PASSWORD = os.environ.get("GOG_KEYRING_PASSWORD", "")
@@ -106,6 +121,18 @@ def init_db(path):
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS full_onboarding_runs (
+              provider TEXT NOT NULL,
+              external_user_id TEXT NOT NULL,
+              requested_at INTEGER NOT NULL,
+              status TEXT NOT NULL,
+              detail TEXT,
+              PRIMARY KEY(provider, external_user_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS offboarding_runs (
               provider TEXT NOT NULL,
               external_user_id TEXT NOT NULL,
               requested_at INTEGER NOT NULL,
@@ -254,18 +281,105 @@ def send_onboarding_email(email, invite_url=None):
     if CFG.GOG_KEYRING_PASSWORD:
         env["GOG_KEYRING_PASSWORD"] = CFG.GOG_KEYRING_PASSWORD
     res = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=CFG.GOG_SEND_TIMEOUT)
-    if res.returncode != 0:
-        raise RuntimeError(f"gog send failed: {res.stderr.strip()[:300]}")
+    stderr = (res.stderr or "").strip()
+    stdout = (res.stdout or "").strip()
+    # `gog` sometimes prints errors but still exits 0.
+    if res.returncode != 0 or "not installed" in (stderr + " " + stdout).lower():
+        msg = (stderr or stdout or "unknown")[:300]
+        raise RuntimeError(f"gog send failed: {msg}")
+
+
+def send_slack_dm(slack_user_id, text):
+    if not CFG.SLACK_BOT_TOKEN:
+        return {"ok": False, "error": "missing_SLACK_BOT_TOKEN"}
+    if not slack_user_id:
+        return {"ok": False, "error": "missing_slack_user_id"}
+    # open DM
+    open_req = urllib.request.Request(
+        "https://slack.com/api/conversations.open",
+        data=urllib.parse.urlencode({"users": slack_user_id}).encode(),
+        method="POST",
+    )
+    open_req.add_header("Authorization", f"Bearer {CFG.SLACK_BOT_TOKEN}")
+    open_req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    with urllib.request.urlopen(open_req, timeout=10) as r:
+        out = json.loads(r.read().decode("utf-8"))
+    if not out.get("ok"):
+        return {"ok": False, "error": out.get("error") or "conversations_open_failed", "needed": out.get("needed"), "provided": out.get("provided")}
+    channel_id = (out.get("channel") or {}).get("id")
+    if not channel_id:
+        return
+    msg_req = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=json.dumps({"channel": channel_id, "text": text}).encode("utf-8"),
+        method="POST",
+    )
+    msg_req.add_header("Authorization", f"Bearer {CFG.SLACK_BOT_TOKEN}")
+    msg_req.add_header("Content-Type", "application/json")
+    urllib.request.urlopen(msg_req, timeout=10)
+    return {"ok": True}
+
+
+def post_slack_message(channel, text):
+    if not CFG.SLACK_BOT_TOKEN or not channel:
+        return {"ok": False}
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=json.dumps({"channel": channel, "text": text}).encode("utf-8"),
+        method="POST",
+    )
+    req.add_header("Authorization", f"Bearer {CFG.SLACK_BOT_TOKEN}")
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        out = json.loads(r.read().decode("utf-8"))
+    return out
+
+
+def find_slack_channel_id(channel_name):
+    # Requires channels:read (and groups:read for private channels)
+    if not CFG.SLACK_BOT_TOKEN or not channel_name:
+        return None
+    cursor = ""
+    for _ in range(5):
+        qs = {"types": "public_channel,private_channel", "limit": "200"}
+        if cursor:
+            qs["cursor"] = cursor
+        url = "https://slack.com/api/conversations.list?" + urllib.parse.urlencode(qs)
+        req = urllib.request.Request(url)
+        req.add_header("Authorization", f"Bearer {CFG.SLACK_BOT_TOKEN}")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            out = json.loads(r.read().decode("utf-8"))
+        if not out.get("ok"):
+            return None
+        for ch in out.get("channels", []) or []:
+            if ch.get("name") == channel_name:
+                return ch.get("id")
+        cursor = ((out.get("response_metadata") or {}).get("next_cursor") or "").strip()
+        if not cursor:
+            break
+    return None
 
 
 def normalize_guest_name(safe_user, email, fallback_user_id):
     profile = safe_user.get("profile", {}) if isinstance(safe_user, dict) else {}
+
+    # Prefer email local-part when available. Slack `users.info` may return
+    # masked placeholder display names/emails in some workspaces.
+    local = (email.split("@")[0] if email and "@" in email else "").strip()
+    if local:
+        # If the local-part has separators, take the last token (e.g.
+        # oc.slack.demo2 -> demo2) to get a stable, short slug.
+        import re
+
+        parts = [p for p in re.split(r"[^a-zA-Z0-9]+", local) if p]
+        if parts:
+            return parts[-1]
+
     candidates = [
         (profile.get("display_name") or "").strip(),
         (profile.get("real_name") or "").strip(),
         (safe_user.get("real_name") or "").strip() if isinstance(safe_user, dict) else "",
     ]
-    local = (email.split("@")[0] if email and "@" in email else "").strip()
     if local:
         candidates.append(local)
     if fallback_user_id:
@@ -315,6 +429,45 @@ def upsert_full_onboarding(provider, external_user_id, status, detail=""):
     )
 
 
+def offboarding_status(provider, external_user_id):
+    rows = db_exec(
+        "SELECT status FROM offboarding_runs WHERE provider=? AND external_user_id=? LIMIT 1",
+        (provider, external_user_id),
+        fetch=True,
+    ) or []
+    return rows[0]["status"] if rows else None
+
+
+def upsert_offboarding(provider, external_user_id, status, detail=""):
+    db_exec(
+        """
+        INSERT INTO offboarding_runs (provider, external_user_id, requested_at, status, detail)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(provider, external_user_id) DO UPDATE SET
+          requested_at=excluded.requested_at,
+          status=excluded.status,
+          detail=excluded.detail
+        """,
+        (provider, external_user_id, now_epoch(), status, detail[:500]),
+    )
+
+
+def call_offboarding(payload):
+    if not CFG.OFFBOARDING_WEBHOOK_URL:
+        raise RuntimeError("missing OFFBOARDING_WEBHOOK_URL")
+    req = urllib.request.Request(CFG.OFFBOARDING_WEBHOOK_URL, data=json.dumps(payload).encode("utf-8"), method="POST")
+    req.add_header("Content-Type", "application/json")
+    if CFG.OFFBOARDING_TOKEN:
+        req.add_header("Authorization", f"Bearer {CFG.OFFBOARDING_TOKEN}")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            out = json.loads(resp.read().decode("utf-8")) if resp.readable() else {}
+            return out
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"offboarding_failed: {e.code} {body[:300]}")
+
+
 def domain_allowed(email):
     if not CFG.ALLOWED_EMAIL_DOMAINS:
         return True
@@ -328,6 +481,13 @@ def process_slack_event(row):
     event = payload.get("event", {})
     user = event.get("user", event)
     slack_user_id = user.get("id")
+    event_type = event.get("type")
+
+    # Some Slack event payloads include email in the embedded user profile.
+    # Prefer this value when present because `users.info` may return masked
+    # placeholder emails depending on workspace/app permissions.
+    payload_email = ((user.get("profile") or {}).get("email") or "").strip().lower()
+    
     if not slack_user_id:
         db_exec("UPDATE events SET status='denied', reason=? WHERE id=?", ("missing_user_id", row["id"]))
         return
@@ -343,14 +503,71 @@ def process_slack_event(row):
         return
 
     safe_user = slack_user or {}
+    email = payload_email or (safe_user.get("profile", {}).get("email") or "").strip().lower()
+    
+    # Handle deactivation/off-boarding.
+    # Slack typically emits `user_change` with `deleted: true` when a user is
+    # deactivated/removed from the workspace.
+    deleted_flag = bool(user.get("deleted")) or bool((slack_user or {}).get("deleted"))
+    is_deactivation = event_type == "user_deactivated" or (event_type == "user_change" and deleted_flag)
+    if is_deactivation:
+        if not CFG.OFFBOARDING_ENABLED:
+            db_exec("UPDATE events SET status='done', reason=? WHERE id=?", ("offboarding_disabled", row["id"]))
+            return
+        
+        # Get mapping info for this user
+        rows = db_exec(
+            "SELECT email, n8n_user_id FROM mappings WHERE provider='slack' AND external_user_id=?",
+            (slack_user_id,),
+            fetch=True,
+        ) or []
+        
+        if not rows:
+            db_exec("UPDATE events SET status='denied', reason=? WHERE id=?", ("no_mapping_found", row["id"]))
+            return
+        
+        mapping = rows[0]
+        user_email = mapping["email"] or email
+        
+        if not user_email:
+            db_exec("UPDATE events SET status='denied', reason=? WHERE id=?", ("email_missing", row["id"]))
+            return
+        
+        current = offboarding_status("slack", slack_user_id)
+        if current == "done":
+            db_exec("UPDATE events SET status='done', reason=? WHERE id=?", ("already_offboarded", row["id"]))
+            return
+        
+        guest_name = normalize_guest_name(safe_user, user_email, slack_user_id)
+        
+        # Call off-boarding automation
+        offboarding_payload = {
+            "guest_name": guest_name,
+            "guest_email": user_email,
+            "guest_slack_user_id": slack_user_id,
+            "n8n_user_id": mapping["n8n_user_id"],
+        }
+        
+        try:
+            out = call_offboarding(offboarding_payload)
+            if out.get("ok"):
+                upsert_offboarding("slack", slack_user_id, "done", json.dumps(out, ensure_ascii=True))
+                upsert_mapping("slack", slack_user_id, team_id, user_email, mapping["n8n_user_id"], "offboarded", "ok")
+            else:
+                upsert_offboarding("slack", slack_user_id, "failed", json.dumps(out, ensure_ascii=True))
+        except Exception as exc:
+            upsert_offboarding("slack", slack_user_id, "failed", str(exc))
+        
+        db_exec("UPDATE events SET status='done', reason=? WHERE id=?", ("offboarded", row["id"]))
+        return
 
+    # Handle regular onboarding
     is_guest = bool(safe_user.get("is_restricted") or safe_user.get("is_ultra_restricted"))
-    if not is_guest:
+    if CFG.SLACK_REQUIRE_GUEST_ONLY and not is_guest:
         upsert_mapping("slack", slack_user_id, team_id, None, None, "denied", "user_not_guest")
         db_exec("UPDATE events SET status='denied', reason=? WHERE id=?", ("user_not_guest", row["id"]))
         return
 
-    email = (safe_user.get("profile", {}).get("email") or "").strip().lower()
     if not email:
         upsert_mapping("slack", slack_user_id, team_id, None, None, "denied", "email_missing")
         db_exec("UPDATE events SET status='denied', reason=? WHERE id=?", ("email_missing", row["id"]))
@@ -366,16 +583,37 @@ def process_slack_event(row):
         return
 
     created = n8n_create_user(email)
-    send_onboarding_email(email, created.get("inviteAcceptUrl"))
-    status = "created" if created.get("created") else "exists"
-    upsert_mapping("slack", slack_user_id, team_id, email, created.get("id"), status, "ok")
+    email_error = None
+    try:
+        send_onboarding_email(email, created.get("inviteAcceptUrl"))
+    except Exception as exc:
+        # Do not block provisioning/automation on email delivery issues.
+        email_error = str(exc)[:200]
 
-    if CFG.FULL_ONBOARDING_ENABLED:
+    setup_link = created.get("inviteAcceptUrl") or CFG.ONBOARDING_SETUP_LINK
+    notify_text = f"Your n8n account is ready. Sign in here: {setup_link}"
+    dm_out = None
+    try:
+        dm_out = send_slack_dm(slack_user_id, notify_text)
+    except Exception as exc:
+        dm_out = {"ok": False, "error": str(exc)[:200]}
+    status = "created" if created.get("created") else "exists"
+    upsert_mapping(
+        "slack",
+        slack_user_id,
+        team_id,
+        email,
+        created.get("id"),
+        status,
+        "ok" if not email_error else f"email_failed:{email_error}",
+    )
+
+    if CFG.FULL_ONBOARDING_ENABLED and (is_guest or not CFG.FULL_ONBOARDING_REQUIRE_GUEST_ONLY):
         current = full_onboarding_status("slack", slack_user_id)
         if current != "done":
             guest_name = normalize_guest_name(safe_user, email, slack_user_id)
             app_slug = CFG.FULL_ONBOARDING_DEFAULT_APP_SLUG
-            payload = {
+            onboarding_payload = {
                 "guest_name": guest_name,
                 "guest_email": email,
                 "guest_slack_user_id": slack_user_id,
@@ -384,15 +622,30 @@ def process_slack_event(row):
                 "skip_workspace_invite": CFG.FULL_ONBOARDING_SKIP_WORKSPACE_INVITE,
             }
             try:
-                out = call_full_onboarding(payload)
+                out = call_full_onboarding(onboarding_payload)
                 if out.get("ok"):
                     upsert_full_onboarding("slack", slack_user_id, "done", json.dumps(out, ensure_ascii=True))
                 else:
                     upsert_full_onboarding("slack", slack_user_id, "failed", json.dumps(out, ensure_ascii=True))
+
+                # DM fallback: if we couldn't DM, post to the created channel.
+                if dm_out and not dm_out.get("ok"):
+                    channel_id = out.get("channel_id") or (out.get("slack") or {}).get("channel_id")
+                    channel_name = out.get("channel_name") or (out.get("slack") or {}).get("channel_name")
+                    if not channel_id and channel_name:
+                        channel_id = find_slack_channel_id(channel_name)
+                    if channel_id:
+                        try:
+                            post_slack_message(channel_id, notify_text)
+                        except Exception:
+                            pass
             except Exception as exc:
                 upsert_full_onboarding("slack", slack_user_id, "failed", str(exc))
 
-    db_exec("UPDATE events SET status='done', reason=? WHERE id=?", ("provisioned", row["id"]))
+    db_exec(
+        "UPDATE events SET status='done', reason=? WHERE id=?",
+        ("provisioned" if not email_error else "provisioned_email_failed", row["id"]),
+    )
 
 
 def process_teams_event(row):
@@ -433,10 +686,25 @@ def process_teams_event(row):
         return
 
     created = n8n_create_user(email)
-    send_onboarding_email(email, created.get("inviteAcceptUrl"))
+    email_error = None
+    try:
+        send_onboarding_email(email, created.get("inviteAcceptUrl"))
+    except Exception as exc:
+        email_error = str(exc)[:200]
     status = "created" if created.get("created") else "exists"
-    upsert_mapping("teams", external_user_id, tenant_id, email, created.get("id"), status, "ok")
-    db_exec("UPDATE events SET status='done', reason=? WHERE id=?", ("provisioned", row["id"]))
+    upsert_mapping(
+        "teams",
+        external_user_id,
+        tenant_id,
+        email,
+        created.get("id"),
+        status,
+        "ok" if not email_error else f"email_failed:{email_error}",
+    )
+    db_exec(
+        "UPDATE events SET status='done', reason=? WHERE id=?",
+        ("provisioned" if not email_error else "provisioned_email_failed", row["id"]),
+    )
 
 
 def process_event(row):
@@ -482,7 +750,34 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/healthz":
-            self._json(200, {"ok": True, "time": now_iso()})
+            # Keep payload small and non-sensitive. This endpoint is polled by
+            # compose healthchecks and is also useful for quick ops triage.
+            counts = {}
+            try:
+                rows = db_exec(
+                    "SELECT status, COUNT(*) AS c FROM events GROUP BY status",
+                    fetch=True,
+                ) or []
+                for r in rows:
+                    counts[r["status"]] = int(r["c"]) if r["c"] is not None else 0
+                last = db_exec(
+                    "SELECT id, provider, event_type, status, reason, received_at FROM events ORDER BY received_at DESC LIMIT 1",
+                    fetch=True,
+                )
+                last = last[0] if last else None
+            except Exception:
+                last = None
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "time": now_iso(),
+                    "events": {
+                        "counts": counts,
+                        "last": dict(last) if last else None,
+                    },
+                },
+            )
             return
         if self.path.startswith("/teams/events"):
             # Microsoft Graph validation handshake
@@ -523,7 +818,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         event_type = payload.get("event", {}).get("type")
-        if event_type not in {"team_join", "user_change"}:
+        if event_type not in {"team_join", "user_change", "user_deactivated"}:
             self._json(200, {"ok": True, "ignored": True})
             return
         event_id = payload.get("event_id") or secrets.token_hex(16)

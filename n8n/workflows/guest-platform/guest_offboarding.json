@@ -1,0 +1,539 @@
+{
+  "name": "guest_offboarding",
+  "nodes": [
+    {
+      "id": "Webhook_Offboard",
+      "name": "Offboarding Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "5e7f8a9b0c1d2e3f4a5b6c7d",
+      "position": [220, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "guest-platform/offboarding",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "IF_Auth",
+      "name": "Auth Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [340, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.headers.authorization || $json.headers.Authorization || ''}}",
+              "operation": "equals",
+              "value2": "={{'Bearer ' + ($vars.OFFBOARDING_TOKEN || '')}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "Function_Normalize",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [470, 300],
+      "parameters": {
+        "functionCode": "const body = $json.body ?? $json;\nconst guestName = (body.guest_name || body.guest || '').toString().trim();\nconst guestEmail = (body.guest_email || body.email || '').toString().trim().toLowerCase();\nconst slackUserId = body.guest_slack_user_id || body.slack_user_id || '';\nconst n8nUserId = body.n8n_user_id || '';\nconst channelId = body.channel_id || body.slack_channel_id || '';\n\nif (!guestName || !guestEmail) {\n  throw new Error('missing guest_name or guest_email');\n}\n\nconst defaultChannelName = 'app-dev-' + guestName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');\nconst defaultRepoName = guestName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-starter-app';\n\nreturn [{\n  json: {\n    guest_name: guestName,\n    guest_email: guestEmail,\n    slack_user_id: slackUserId,\n    n8n_user_id: n8nUserId,\n    channel_id: channelId,\n    channel_name: (body.channel_name || defaultChannelName),\n    repo_name: (body.repo_name || defaultRepoName)\n  }\n}];"
+      }
+    },
+    {
+      "id": "Set_Config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [700, 300],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg1",
+              "name": "github_owner",
+              "value": "={{$vars.GITHUB_OWNER || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "cfg2",
+              "name": "github_token",
+              "value": "={{$vars.GITHUB_TOKEN || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "cfg3",
+              "name": "slack_token",
+              "value": "={{$vars.SLACK_BOT_TOKEN || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "cfg4",
+              "name": "n8n_api_key",
+              "value": "={{($vars.N8N_API_KEY_P1 || '') + ($vars.N8N_API_KEY_P2 || '')}}",
+              "type": "string"
+            },
+            {
+              "id": "cfg5",
+              "name": "n8n_base_url",
+              "value": "={{$vars.N8N_BASE_URL || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "cfg6",
+              "name": "vercel_token",
+              "value": "={{$vars.VERCEL_TOKEN || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "cfg6b",
+              "name": "vercel_team_id",
+              "value": "={{$vars.VERCEL_ORG_ID || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "cfg7",
+              "name": "operator_channel",
+              "value": "={{$vars.SLACK_OPERATOR_ALERT_CHANNEL || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "p1",
+              "name": "guest_name",
+              "value": "={{$node[\"Normalize Request\"].json.guest_name}}",
+              "type": "string"
+            },
+            {
+              "id": "p2",
+              "name": "guest_email",
+              "value": "={{$node[\"Normalize Request\"].json.guest_email}}",
+              "type": "string"
+            },
+            {
+              "id": "p3",
+              "name": "slack_user_id",
+              "value": "={{$node[\"Normalize Request\"].json.slack_user_id}}",
+              "type": "string"
+            },
+            {
+              "id": "p4",
+              "name": "n8n_user_id",
+              "value": "={{$node[\"Normalize Request\"].json.n8n_user_id}}",
+              "type": "string"
+            },
+            {
+              "id": "p5",
+              "name": "channel_name",
+              "value": "={{$node[\"Normalize Request\"].json.channel_name}}",
+              "type": "string"
+            },
+            {
+              "id": "p6",
+              "name": "repo_name",
+              "value": "={{$node[\"Normalize Request\"].json.repo_name}}",
+              "type": "string"
+            },
+            {
+              "id": "p7",
+              "name": "channel_id",
+              "value": "={{$node[\"Normalize Request\"].json.channel_id}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "keepOnlySet": false
+        }
+      }
+    },
+    {
+      "id": "HTTP_GetRepo",
+      "name": "Get GitHub Repo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 150],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.github.com/repos/' + $node['Set Config'].json.github_owner + '/' + $node['Set Config'].json.repo_name }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $node['Set Config'].json.github_token }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {
+          "fullResponse": true,
+          "ignoreResponseCode": true,
+          "ignoreHttpStatusErrors": true
+        }
+      },
+      "onError": "continueRegular"
+    },
+    {
+      "id": "IF_RepoArchived",
+      "name": "Repo Archived?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [840, 150],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ ($node['Get GitHub Repo'].json.statusCode === 404 || ($node['Get GitHub Repo'].json.body && $node['Get GitHub Repo'].json.body.archived === true)) ? 'true' : 'false' }}",
+              "operation": "equals",
+              "value2": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "HTTP_ArchiveRepo",
+      "name": "Archive GitHub Repo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 150],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://api.github.com/repos/' + $node['Set Config'].json.github_owner + '/' + $node['Set Config'].json.repo_name }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $node['Set Config'].json.github_token }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { archived: true } }}",
+        "options": {
+          "fullResponse": true,
+          "ignoreResponseCode": true,
+          "ignoreHttpStatusErrors": true
+        }
+      },
+      "onError": "continueRegular"
+    },
+    {
+      "id": "HTTP_DeleteChannel",
+      "name": "Delete Slack Channel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/conversations.archive",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $node['Set Config'].json.slack_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { channel: $node['Set Config'].json.channel_id } }}",
+        "options": {
+          "fullResponse": true,
+          "ignoreResponseCode": true,
+          "ignoreHttpStatusErrors": true
+        }
+      },
+      "onError": "continueRegular"
+    },
+    {
+      "id": "HTTP_DeactivateN8N",
+      "name": "Delete n8n User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 450],
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ $node['Set Config'].json.n8n_base_url + '/api/v1/users/' + $node['Set Config'].json.n8n_user_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-API-KEY",
+              "value": "={{ $node['Set Config'].json.n8n_api_key }}"
+            }
+          ]
+        },
+        "options": {
+          "fullResponse": true,
+          "ignoreResponseCode": true,
+          "ignoreHttpStatusErrors": true
+        }
+      },
+      "onError": "continueRegular"
+    },
+    {
+      "id": "HTTP_DeleteVercel",
+      "name": "Delete Vercel Project",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1180, 300],
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ 'https://api.vercel.com/v9/projects/' + $node['Set Config'].json.repo_name + ($node['Set Config'].json.vercel_team_id ? ('?teamId=' + $node['Set Config'].json.vercel_team_id) : '') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $node['Set Config'].json.vercel_token }}"
+            }
+          ]
+        },
+        "options": {
+          "fullResponse": true,
+          "ignoreResponseCode": true,
+          "ignoreHttpStatusErrors": true
+        }
+      },
+      "onError": "continueRegular"
+    },
+    {
+      "id": "Function_BuildResult",
+      "name": "Build Result",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1420, 300],
+      "parameters": {
+        "functionCode": "function parseBody(x) {\n  if (!x) return {};\n  if (typeof x === 'object') return x;\n  if (typeof x === 'string') {\n    try { return JSON.parse(x); } catch { return { raw: x }; }\n  }\n  return {};\n}\n\nconst cfg = $node['Set Config'].json || {};\nconst gh = ($node['Archive GitHub Repo'].json && Object.keys($node['Archive GitHub Repo'].json).length) ? $node['Archive GitHub Repo'].json : ($node['Get GitHub Repo'].json || {});\nconst sl = $node['Delete Slack Channel'].json || {};\nconst n8 = $node['Delete n8n User'].json || {};\nconst ve = $node['Delete Vercel Project'].json || {};\n\nconst ghBody = parseBody(gh.body);\nconst ghMessage = (ghBody.message || ghBody.raw || '').toString();\nconst ghOk = (gh.statusCode < 400) || gh.statusCode === 404 || (gh.statusCode === 403 && ghMessage.toLowerCase().includes('archived so is read-only'));\n\nconst slBody = parseBody(sl.body);\nconst slOk = (sl.statusCode < 400) && ((slBody.ok !== false) || slBody.error === 'channel_not_found');\nconst n8Ok = (n8.statusCode < 400) || n8.statusCode === 404;\nconst veOk = (ve.statusCode < 400) || ve.statusCode === 404;\n\nconst allOk = ghOk && slOk && n8Ok && veOk;\n\nconst text = allOk\n  ? ['*Guest Off-boarding Completed*', `Guest: ${cfg.guest_name}`, `Channel: #${cfg.channel_name}`, `Repo: ${cfg.github_owner}/${cfg.repo_name} (archived)`, `Status: All resources cleaned up`].join('\\n')\n  : ['*Guest Off-boarding Partial*', `Guest: ${cfg.guest_name}`, `GitHub: ${ghOk ? '✓' : '✗'}`, `Slack: ${slOk ? '✓' : '✗'} (${slBody.error || sl.statusCode || 'n/a'})`, `n8n: ${n8Ok ? '✓' : '✗'}`, `Vercel: ${veOk ? '✓' : '✗'}`].join('\\n');\n\nreturn [{ json: { ok: allOk, guest_name: cfg.guest_name, channel_name: cfg.channel_name, repo_name: cfg.repo_name, github_ok: ghOk, slack_ok: slOk, n8n_ok: n8Ok, vercel_ok: veOk, text: text, operator_channel: cfg.operator_channel, slack_token: cfg.slack_token } }];"
+      }
+    },
+    {
+      "id": "HTTP_Notify",
+      "name": "Notify Operator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.slack_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { channel: $json.operator_channel, text: $json.text } }}"
+      }
+    },
+    {
+      "id": "Respond_Unauthorized",
+      "name": "Respond Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [470, 460],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 401,
+        "responseBody": "={{ { ok: false, error: 'unauthorized' } }}"
+      }
+    },
+    {
+      "id": "Respond_Done",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1880, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: $json.ok, guest: $json.guest_name, channel: $json.channel_name, repo: $json.repo_name, github: $json.github_ok, slack: $json.slack_ok, n8n: $json.n8n_ok, vercel: $json.vercel_ok } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Offboarding Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Valid?": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Get GitHub Repo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get GitHub Repo": {
+      "main": [
+        [
+          {
+            "node": "Repo Archived?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repo Archived?": {
+      "main": [
+        [
+          {
+            "node": "Delete Slack Channel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Archive GitHub Repo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Archive GitHub Repo": {
+      "main": [
+        [
+          {
+            "node": "Delete Slack Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Slack Channel": {
+      "main": [
+        [
+          {
+            "node": "Delete n8n User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete n8n User": {
+      "main": [
+        [
+          {
+            "node": "Delete Vercel Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Vercel Project": {
+      "main": [
+        [
+          {
+            "node": "Build Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Result": {
+      "main": [
+        [
+          {
+            "node": "Notify Operator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Operator": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

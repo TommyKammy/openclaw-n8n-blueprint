@@ -1,5 +1,7 @@
 .env
 .env.local
+docker/nginx/webhook_tokens.conf
+insert_credentials.sql
 certs/
 acme/
 __pycache__/

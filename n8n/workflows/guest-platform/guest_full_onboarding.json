@@ -15,6 +15,24 @@
       }
     },
     {
+      "id": "IF_Auth",
+      "name": "Auth Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [340, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.headers.authorization || $json.headers.Authorization || ''}}",
+              "operation": "equals",
+              "value2": "={{'Bearer ' + ($vars.FULL_ONBOARDING_TOKEN || '')}}"
+            }
+          ]
+        }
+      }
+    },
+    {
       "id": "Function_Normalize",
       "name": "Normalize Request",
       "type": "n8n-nodes-base.function",
@@ -36,30 +54,62 @@
             {
               "id": "cfg1",
               "name": "automation_url",
-              "value": "http://host.docker.internal:18111/guest-platform/full-onboard",
+              "value": "http://guest-automation:18111/guest-platform/full-onboard",
               "type": "string"
             },
             {
               "id": "cfg2",
               "name": "automation_token",
-              "value": "REPLACE_GUEST_AUTOMATION_TOKEN",
+              "value": "={{$vars.GUEST_AUTOMATION_TOKEN || ''}}",
               "type": "string"
             },
             {
               "id": "cfg3",
               "name": "operator_channel",
-              "value": "CXXXXXXXX",
+              "value": "={{$vars.SLACK_OPERATOR_ALERT_CHANNEL || ''}}",
               "type": "string"
             },
             {
               "id": "cfg4",
               "name": "slack_token",
-              "value": "xoxb-REPLACE_ME",
+              "value": "={{$vars.SLACK_BOT_TOKEN || ''}}",
+              "type": "string"
+            },
+            {
+              "id": "p1",
+              "name": "guest_name",
+              "value": "={{$node[\"Normalize Request\"].json.guest_name}}",
+              "type": "string"
+            },
+            {
+              "id": "p2",
+              "name": "guest_email",
+              "value": "={{$node[\"Normalize Request\"].json.guest_email}}",
+              "type": "string"
+            },
+            {
+              "id": "p3",
+              "name": "guest_slack_user_id",
+              "value": "={{$node[\"Normalize Request\"].json.guest_slack_user_id}}",
+              "type": "string"
+            },
+            {
+              "id": "p4",
+              "name": "app_slug",
+              "value": "={{$node[\"Normalize Request\"].json.app_slug}}",
+              "type": "string"
+            },
+            {
+              "id": "p5",
+              "name": "description",
+              "value": "={{$node[\"Normalize Request\"].json.description}}",
               "type": "string"
             }
           ]
         },
-        "options": {}
+        "options": {
+          "keepOnlySet": false
+        }
       }
     },
     {
@@ -68,6 +118,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [940, 300],
+      "onError": "continueRegular",
       "parameters": {
         "method": "POST",
         "url": "={{$json.automation_url}}",
@@ -86,7 +137,11 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { guest_name: $json.guest_name, guest_email: $json.guest_email, guest_slack_user_id: $json.guest_slack_user_id, app_slug: $json.app_slug, description: $json.description } }}"
+        "jsonBody": "={{ { guest_name: $json.guest_name, guest_email: $json.guest_email, guest_slack_user_id: $json.guest_slack_user_id, app_slug: $json.app_slug, description: $json.description } }}",
+        "options": {
+          "ignoreResponseCode": true,
+          "ignoreHttpStatusErrors": true
+        }
       }
     },
     {
@@ -105,6 +160,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1420, 300],
+      "onError": "continueRegular",
       "parameters": {
         "method": "POST",
         "url": "https://slack.com/api/chat.postMessage",
@@ -123,7 +179,23 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { channel: $json.operator_channel, text: $json.text } }}"
+        "jsonBody": "={{ { channel: $json.operator_channel, text: $json.text } }}",
+        "options": {
+          "ignoreResponseCode": true,
+          "ignoreHttpStatusErrors": true
+        }
+      }
+    },
+    {
+      "id": "Respond_Unauthorized",
+      "name": "Respond Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [470, 460],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 401,
+        "responseBody": "={{ { ok: false, error: 'unauthorized' } }}"
       }
     },
     {
@@ -134,7 +206,7 @@
       "position": [1650, 300],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: $json.ok ?? false, repo: $json.repo ?? null, channel_id: $json.channel_id ?? null, guest_user_id: $json.guest_user_id ?? null } }}"
+        "responseBody": "={{ { ok: $node['Run Full Automation'].json.ok ?? false, error: $node['Run Full Automation'].json.error ?? null, guest_slug: $node['Run Full Automation'].json.guest_slug ?? null, channel_name: $node['Run Full Automation'].json.channel_name ?? null, channel_id: $node['Run Full Automation'].json.channel_id ?? null, repo: $node['Run Full Automation'].json.repo ?? null, github: $node['Run Full Automation'].json.github ?? null, slack: $node['Run Full Automation'].json.slack ?? null, vercel: $node['Run Full Automation'].json.vercel ?? null } }}"
       }
     }
   ],
@@ -143,7 +215,25 @@
       "main": [
         [
           {
+            "node": "Auth Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Valid?": {
+      "main": [
+        [
+          {
             "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized",
             "type": "main",
             "index": 0
           }

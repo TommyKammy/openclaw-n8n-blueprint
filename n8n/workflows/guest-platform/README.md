@@ -45,3 +45,16 @@ For full onboarding webhook automation:
   - `slack_token`
 - Recommended in Docker: `automation_url=http://host.docker.internal:18111/guest-platform/full-onboard`
   and add `host.docker.internal:host-gateway` to the n8n container `extra_hosts`.
+
+For offboarding webhook automation:
+
+- `OFFBOARDING_TOKEN`
+- `N8N_BASE_URL`
+- `N8N_API_KEY`
+
+Security notes:
+
+- `guest_full_onboarding` validates `Authorization: Bearer <FULL_ONBOARDING_TOKEN>`.
+- `guest_offboarding` validates `Authorization: Bearer <OFFBOARDING_TOKEN>`.
+- Do not hardcode Slack/GitHub/Vercel/n8n tokens in Set/IF nodes.
+- Prefer `$vars.*` (n8n Variables) for runtime secrets if `$env` access is restricted in your n8n setup.

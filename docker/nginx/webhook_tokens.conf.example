@@ -1,0 +1,8 @@
+# Nginx include file for webhook bearer tokens.
+#
+# Create a copy at:
+#   docker/nginx/webhook_tokens.conf
+# and set real values there. That file is gitignored.
+
+set $full_onboarding_auth "Bearer REPLACE_ME_FULL_ONBOARDING_TOKEN";
+set $offboarding_auth "Bearer REPLACE_ME_OFFBOARDING_TOKEN";
