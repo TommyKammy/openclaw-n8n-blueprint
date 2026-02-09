@@ -188,8 +188,8 @@ def main() -> None:
     admin_token = env.get("SLACK_ADMIN_USER_TOKEN", "")
     vercel_token = env.get("VERCEL_TOKEN", "")
     vercel_org_id = env.get("VERCEL_ORG_ID", "")
-    vercel_author_name = env.get("VERCEL_GIT_COMMIT_AUTHOR_NAME", "Tomoaki Kawada")
-    vercel_author_email = env.get("VERCEL_GIT_COMMIT_AUTHOR_EMAIL", "tomoaki.w.kawada@gmail.com")
+    vercel_author_name = env.get("VERCEL_GIT_COMMIT_AUTHOR_NAME", "Your Name")
+    vercel_author_email = env.get("VERCEL_GIT_COMMIT_AUTHOR_EMAIL", "your-email@example.com")
     post_templates_mode = env.get("POST_PROMPT_TEMPLATES_MODE", "on_create").strip().lower()
 
     if not bot_token:

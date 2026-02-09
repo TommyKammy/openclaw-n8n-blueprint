@@ -60,12 +60,16 @@ services:
     environment:
       OPENCLAW_GATEWAY_PORT: 18789
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      OPENCLAW_HOOK_TOKEN: ${OPENCLAW_HOOK_TOKEN}
       GOG_ACCOUNT: ${GOG_ACCOUNT}
       GOG_KEYRING_PASSWORD: ${GOG_KEYRING_PASSWORD}
     volumes:
       - openclaw_state:/home/openclaw/.openclaw
       - ./docker/openclaw/openclaw.json:/home/openclaw/.openclaw/openclaw.json:ro
     command: ["openclaw", "gateway", "--port", "18789"]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
     networks:
       - app_net
 
@@ -132,6 +136,8 @@ services:
       HOME: /home/openclaw
       SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS}
       SYNC_METRICS_PORT: ${SYNC_METRICS_PORT}
+      OPENCLAW_GATEWAY_URL: ws://openclaw-gateway:18789
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
       OPENCLAW_SESSION_GLOB: /home/openclaw/.openclaw/agents/main/sessions/*.jsonl
       OPENCLAW_HOOK_URL: ${OPENCLAW_HOOK_URL}
       OPENCLAW_HOOK_TOKEN: ${OPENCLAW_HOOK_TOKEN}

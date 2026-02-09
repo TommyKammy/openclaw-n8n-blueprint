@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import base64
 import glob
 import hashlib
 import json
@@ -29,7 +30,14 @@ def run(cmd):
     p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0:
         raise RuntimeError(f"command failed: {' '.join(cmd)}\n{p.stderr.strip()}")
-    return p.stdout
+    stdout = p.stdout
+    # Strip any UI/text output before the JSON starts
+    json_start = stdout.find('{')
+    if json_start == -1:
+        json_start = stdout.find('[')
+    if json_start != -1:
+        stdout = stdout[json_start:]
+    return stdout
 
 
 def env_bool(name, default=False):
@@ -248,7 +256,13 @@ def set_active(db_container, state):
 
 def import_workflows(n8n_container, import_dir, files_dir):
     run(["docker", "exec", n8n_container, "sh", "-lc", f"rm -rf {import_dir}/* && mkdir -p {import_dir}"])
-    run(["docker", "cp", f"{files_dir}/.", f"{n8n_container}:{import_dir}"])
+    for fname in os.listdir(files_dir):
+        fpath = os.path.join(files_dir, fname)
+        if os.path.isfile(fpath):
+            with open(fpath, "r", encoding="utf-8") as f:
+                content = f.read()
+            encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
+            run(["docker", "exec", n8n_container, "sh", "-lc", f"echo '{encoded}' | base64 -d > {import_dir}/{fname}"])
     run(["docker", "exec", n8n_container, "n8n", "import:workflow", "--separate", "--input", import_dir])
 
 
@@ -274,6 +288,16 @@ def save_state(path, data):
     os.replace(tmp, path)
 
 
+def get_fallback_requester():
+    fallback = os.environ.get("SYNC_FALLBACK_REQUESTER", "").strip()
+    if not fallback:
+        return None
+    if ":" in fallback:
+        sid, email = fallback.split(":", 1)
+        return {"slack_user_id": sid.strip(), "email": email.strip().lower()}
+    return None
+
+
 def sync_once():
     state_file = os.environ.get("SYNC_STATE_FILE", "/state/state.json")
     session_glob = os.environ.get("OPENCLAW_SESSION_GLOB", "/home/openclaw/.openclaw/agents/main/sessions/*.jsonl")
@@ -286,6 +310,8 @@ def sync_once():
     allowed_emails = csv_set("SYNC_ALLOWED_EMAILS")
     require_slack_email = env_bool("SYNC_REQUIRE_SLACK_EMAIL_VERIFICATION", True)
     slack_bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    allow_cli_jobs = env_bool("SYNC_ALLOW_CLI_JOBS", True)
+    fallback_requester = get_fallback_requester()
 
     user_email_map = {}
     mapping_raw = os.environ.get("SYNC_USER_EMAIL_MAP", "")
@@ -307,6 +333,8 @@ def sync_once():
         if not job_id:
             continue
         req = requesters.get(job_id)
+        if not req and allow_cli_jobs and fallback_requester:
+            req = fallback_requester
         if not req:
             skipped.append({"jobId": job_id, "reason": "no_requester_found"})
             continue
