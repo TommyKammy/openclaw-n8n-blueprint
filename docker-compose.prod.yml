@@ -60,6 +60,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=256m
+      - /home/node/.cache:rw,nosuid,size=128m
     security_opt:
       - no-new-privileges:true
     pids_limit: 300
